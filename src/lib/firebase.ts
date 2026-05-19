@@ -5,6 +5,8 @@ import { getDatabase, Database } from "firebase/database";
 import { getAnalytics, isSupported, Analytics } from "firebase/analytics";
 import { getMessaging, getToken, Messaging } from "firebase/messaging";
 
+// NOTE: This worker URL is environment-sensitive. The app fetches Firebase configurations 
+// dynamically from the Cloudflare Worker environment to prevent exposing hardcoded keys.
 const WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL || "https://skillbridge-crm-env.contact-skillbridgeladder.workers.dev";
 
 let app: FirebaseApp;

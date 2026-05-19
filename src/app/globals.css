@@ -518,6 +518,8 @@ body {
 }
 
 @media (max-width: 480px) {
+  .login-bg { padding: 16px 12px; }
+  .login-card { padding: 24px 16px; border-radius: 14px; }
   .stats-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
   .stat-card { padding: 14px; gap: 10px; }
   .stat-value { font-size: 22px; }

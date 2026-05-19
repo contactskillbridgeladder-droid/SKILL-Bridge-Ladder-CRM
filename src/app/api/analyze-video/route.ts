@@ -25,6 +25,8 @@ export async function POST(req: Request) {
     let apiKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
     if (!apiKey) {
       try {
+        // NOTE: This worker URL is environment-sensitive. Secrets like the Gemini API Key are
+        // fetched dynamically from the Cloudflare Worker environment variables/secrets.
         const WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL || "https://skillbridge-crm-env.contact-skillbridgeladder.workers.dev";
         let authKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "";
         if (!authKey) {
