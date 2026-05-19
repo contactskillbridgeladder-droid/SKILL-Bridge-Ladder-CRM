@@ -35,9 +35,11 @@ export default {
         origin.includes("localhost") || 
         origin.includes("127.0.0.1") || 
         origin.includes("skillbridgeladder.in") ||
+        origin.includes("vercel.app") ||
         referer.includes("localhost") || 
         referer.includes("127.0.0.1") || 
-        referer.includes("skillbridgeladder.in");
+        referer.includes("skillbridgeladder.in") ||
+        referer.includes("vercel.app");
 
       if (!isAllowed) {
         return new Response(JSON.stringify({ error: "Access Denied: Unauthorized request origin." }), {
