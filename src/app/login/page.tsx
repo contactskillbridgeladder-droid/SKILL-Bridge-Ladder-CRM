@@ -1,6 +1,12 @@
 "use client";
-import React, { useState, Suspense } from "react";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
+import React, { useState, useEffect, Suspense } from "react";
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  sendEmailVerification, 
+  signOut, 
+  onAuthStateChanged 
+} from "firebase/auth";
 import { doc, setDoc, getDoc } from "firebase/firestore";
 import { initFirebase } from "@/lib/firebase";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -8,29 +14,136 @@ import { useRouter, useSearchParams } from "next/navigation";
 function LoginForm() {
   const searchParams = useSearchParams();
   const inviteCode = searchParams.get("invite");
-  const allowSignUp = inviteCode === "SKILLBRIDGE2026";
+  const allowSignUpParam = inviteCode === "SKILLBRIDGE2026";
 
-  const [mode, setMode] = useState<"login" | "signup">(allowSignUp ? "signup" : "login");
+  const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  
+  // Profile details for signup
+  const [fullName, setFullName] = useState("");
+  const [whatsapp, setWhatsapp] = useState("");
+  const [inviteCodeInput, setInviteCodeInput] = useState(inviteCode || "");
+
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [needsVerification, setNeedsVerification] = useState(false);
   const router = useRouter();
+
+  // 1. Keep logged in check (redirect automatically on mount/reload if already verified)
+  useEffect(() => {
+    let unsub: (() => void) | undefined;
+    initFirebase().then(({ auth, db }) => {
+      unsub = onAuthStateChanged(auth, (u) => {
+        if (u) {
+          if (u.emailVerified) {
+            getDoc(doc(db, "users", u.uid)).then((snap: any) => {
+              const role = snap.exists() ? snap.data().role : "editor";
+              if (role === "admin") router.push("/admin");
+              else if (role === "head_editor") router.push("/head-editor");
+              else router.push("/editor");
+            });
+          } else {
+            setNeedsVerification(true);
+          }
+        }
+      });
+    });
+    return () => unsub?.();
+  }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setMessage("");
     setLoading(true);
+
     try {
       const { auth, db } = await initFirebase();
-      if (mode === "signup" && allowSignUp) {
+
+      if (mode === "signup") {
+        if (password !== confirmPassword) {
+          setError("Passwords do not match.");
+          setLoading(false);
+          return;
+        }
+
+        // Invite validation
+        let signupRole = "editor";
+        let sourcedBy = "admin";
+        const inviteCodeTrimmed = inviteCodeInput.trim();
+
+        if (inviteCodeTrimmed !== "SKILLBRIDGE2026") {
+          const inviteRef = doc(db, "invites", inviteCodeTrimmed);
+          const inviteSnap = await getDoc(inviteRef);
+          
+          if (!inviteSnap.exists()) {
+            setError("Invalid invite code. Signup is restricted to authorized team members.");
+            setLoading(false);
+            return;
+          }
+          
+          const inviteData = inviteSnap.data();
+          if (inviteData.status === "used") {
+            setError("This invite link has already been used.");
+            setLoading(false);
+            return;
+          }
+          
+          if (inviteData.expiresAt) {
+            const expiresTime = inviteData.expiresAt.toMillis ? inviteData.expiresAt.toMillis() : new Date(inviteData.expiresAt).getTime();
+            if (Date.now() > expiresTime) {
+              setError("This invite link has expired.");
+              setLoading(false);
+              return;
+            }
+          }
+          
+          signupRole = inviteData.role || "editor";
+          sourcedBy = inviteData.createdBy || "admin";
+        }
+
+        // Create authentication account
         const cred = await createUserWithEmailAndPassword(auth, email, password);
+
+        // Send Firebase Email Verification
+        await sendEmailVerification(cred.user);
+
+        // Write complete User Profile to Firestore
         await setDoc(doc(db, "users", cred.user.uid), {
-          uid: cred.user.uid, email, role: "editor", sourced_by: "Invite",
+          uid: cred.user.uid,
+          email,
+          name: fullName,
+          whatsappNumber: whatsapp,
+          role: signupRole,
+          sourced_by: sourcedBy,
+          createdAt: new Date()
         });
-        router.push("/editor");
+
+        // Mark dynamic invite as used
+        if (inviteCodeTrimmed !== "SKILLBRIDGE2026") {
+          const { updateDoc } = await import("firebase/firestore");
+          await updateDoc(doc(db, "invites", inviteCodeTrimmed), {
+            status: "used",
+            usedBy: cred.user.uid,
+            usedAt: new Date()
+          });
+        }
+
+        setNeedsVerification(true);
       } else {
         const cred = await signInWithEmailAndPassword(auth, email, password);
+        
+        // Force Email Verification
+        if (!cred.user.emailVerified) {
+          await sendEmailVerification(cred.user);
+          setNeedsVerification(true);
+          setLoading(false);
+          return;
+        }
+
         const snap = await getDoc(doc(db, "users", cred.user.uid));
         const role = snap.exists() ? snap.data().role : "editor";
         if (role === "admin") router.push("/admin");
@@ -51,23 +164,128 @@ function LoginForm() {
     }
   };
 
+  const checkIfVerified = async () => {
+    setError("");
+    setMessage("");
+    try {
+      const { auth, db } = await initFirebase();
+      if (auth.currentUser) {
+        await auth.currentUser.reload();
+        if (auth.currentUser.emailVerified) {
+          const snap = await getDoc(doc(db, "users", auth.currentUser.uid));
+          const role = snap.exists() ? snap.data().role : "editor";
+          if (role === "admin") router.push("/admin");
+          else if (role === "head_editor") router.push("/head-editor");
+          else router.push("/editor");
+        } else {
+          setError("Email is still not verified. Please check your inbox and verify.");
+        }
+      }
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const resendVerification = async () => {
+    setError("");
+    setMessage("");
+    try {
+      const { auth } = await initFirebase();
+      if (auth.currentUser) {
+        await sendEmailVerification(auth.currentUser);
+        setMessage("Verification email has been resent successfully!");
+      }
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handleLogout = async () => {
+    setError("");
+    setMessage("");
+    try {
+      const { auth } = await initFirebase();
+      await signOut(auth);
+      setNeedsVerification(false);
+      setMode("login");
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  // Render Verification Page State
+  if (needsVerification) {
+    return (
+      <div className="login-bg">
+        <div className="login-card animate-fade" style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 44, marginBottom: 20 }}>✉️</div>
+          <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 12, color: "var(--text)" }}>Verify Your Email</h2>
+          <p style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.6, marginBottom: 24 }}>
+            We have sent a verification link to <strong>{email || "your email address"}</strong>.<br/>
+            Please check your inbox (and spam folder) and verify your email to activate your account.
+          </p>
+
+          {error && <div className="form-error" style={{ marginBottom: 16 }}>{error}</div>}
+          {message && <div style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", color: "#34d399", borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 16 }}>{message}</div>}
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <button className="btn btn-primary" onClick={checkIfVerified} style={{ width: "100%", justifyContent: "center" }}>
+              I have verified my email
+            </button>
+            <button className="btn btn-secondary" onClick={resendVerification} style={{ width: "100%", justifyContent: "center" }}>
+              Resend Verification Link
+            </button>
+            <button className="btn btn-ghost" onClick={handleLogout} style={{ width: "100%", justifyContent: "center", color: "#f87171" }}>
+              Back to Sign In
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="login-bg">
       <div className="login-card animate-fade">
         {/* Logo */}
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, marginBottom: 36 }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, marginBottom: 28 }}>
           <div style={{ width: 52, height: 52, borderRadius: 14, background: "linear-gradient(135deg,#7c3aed,#3b82f6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, boxShadow: "0 8px 32px rgba(124,58,237,0.4)" }}>⚡</div>
           <div style={{ textAlign: "center" }}>
             <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.5px" }} className="gradient-text">SkillBridge CRM</h1>
             <p style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 4 }}>
-              {mode === "signup" ? "Create your account (Invite Only)" : "Sign in to continue"}
+              {mode === "signup" ? "Create your CRM account" : "Sign in to continue"}
             </p>
           </div>
         </div>
 
         {error && <div className="form-error" style={{ marginBottom: 20 }}>{error}</div>}
 
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {mode === "signup" && (
+            <>
+              <div className="form-group">
+                <label className="form-label" htmlFor="fullName">Full Name</label>
+                <input id="fullName" type="text" required
+                  className="crm-input" placeholder="John Doe"
+                  value={fullName} onChange={e => setFullName(e.target.value)} />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="whatsapp">WhatsApp Number</label>
+                <input id="whatsapp" type="tel" required
+                  className="crm-input" placeholder="+91 98765 43210"
+                  value={whatsapp} onChange={e => setWhatsapp(e.target.value)} />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="inviteCode">Invite Code</label>
+                <input id="inviteCode" type="text" required
+                  className="crm-input" placeholder="Enter Invite Code (e.g. SKILLBRIDGE2026)"
+                  value={inviteCodeInput} onChange={e => setInviteCodeInput(e.target.value)} />
+              </div>
+            </>
+          )}
+
           <div className="form-group">
             <label className="form-label" htmlFor="email">Email address</label>
             <input id="email" type="email" required autoComplete="email"
@@ -83,25 +301,33 @@ function LoginForm() {
               value={password} onChange={e => setPassword(e.target.value)} />
           </div>
 
+          {mode === "signup" && (
+            <div className="form-group">
+              <label className="form-label" htmlFor="confirmPassword">Confirm Password</label>
+              <input id="confirmPassword" type="password" required
+                autoComplete="new-password"
+                className="crm-input" placeholder="••••••••"
+                value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} />
+            </div>
+          )}
+
           <button type="submit" disabled={loading} className="btn btn-primary" style={{ width: "100%", justifyContent: "center", marginTop: 4, padding: "12px 18px", fontSize: 14 }}>
             {loading
-              ? (mode === "signup" ? "Creating account…" : "Signing in…")
-              : (mode === "signup" ? "Create account" : "Sign in →")
+              ? (mode === "signup" ? "Registering account…" : "Signing in…")
+              : (mode === "signup" ? "Register & Verify Email" : "Sign in →")
             }
           </button>
         </form>
 
-        {allowSignUp && (
-          <p style={{ marginTop: 20, textAlign: "center", fontSize: 13, color: "var(--text-muted)" }}>
-            {mode === "signup" ? "Already have an account? " : "Have an invite? "}
-            <button onClick={() => { setMode(mode === "signup" ? "login" : "signup"); setError(""); }}
-              style={{ background: "none", border: "none", color: "#a78bfa", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>
-              {mode === "signup" ? "Sign in" : "Sign up"}
-            </button>
-          </p>
-        )}
+        <p style={{ marginTop: 20, textAlign: "center", fontSize: 13, color: "var(--text-muted)" }}>
+          {mode === "signup" ? "Already have an account? " : "New team member? "}
+          <button onClick={() => { setMode(mode === "signup" ? "login" : "signup"); setError(""); }}
+            style={{ background: "none", border: "none", color: "#a78bfa", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>
+            {mode === "signup" ? "Sign in" : "Create Account / Sign up"}
+          </button>
+        </p>
 
-        <p style={{ marginTop: 28, textAlign: "center", fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
+        <p style={{ marginTop: 24, textAlign: "center", fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
           Access to this platform is restricted to<br/>authorized SkillBridge Ladder team members.
         </p>
       </div>

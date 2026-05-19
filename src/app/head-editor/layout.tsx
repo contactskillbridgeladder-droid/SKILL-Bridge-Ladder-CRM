@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import { initFirebase } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 
 export default function HeadEditorLayout({ children }: { children: React.ReactNode }) {
@@ -10,18 +11,24 @@ export default function HeadEditorLayout({ children }: { children: React.ReactNo
   const [user, setUser] = useState<{ name: string; role: string; uid: string } | null>(null);
 
   useEffect(() => {
+    let unsub: (() => void) | undefined;
     initFirebase().then(({ auth, db }) => {
-      const u = auth.currentUser;
-      if (!u) { router.push("/login"); return; }
-      if (!db) {
-        console.error("Firestore DB not initialized in head editor layout.");
-        return;
-      }
-      getDoc(doc(db, "users", u.uid)).then((snap: any) => {
-        const d = snap.data();
-        setUser({ name: d?.name || u.email || "", role: d?.role || "head_editor", uid: u.uid });
+      unsub = onAuthStateChanged(auth, (u) => {
+        if (!u) {
+          router.push("/login");
+          return;
+        }
+        if (!db) {
+          console.error("Firestore DB not initialized in head editor layout.");
+          return;
+        }
+        getDoc(doc(db, "users", u.uid)).then((snap: any) => {
+          const d = snap.data();
+          setUser({ name: d?.name || u.email || "", role: d?.role || "head_editor", uid: u.uid });
+        });
       });
     });
+    return () => unsub?.();
   }, [router]);
 
   if (!user) return (

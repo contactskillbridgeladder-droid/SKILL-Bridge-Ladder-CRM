@@ -39,6 +39,7 @@ const SIDEBAR: Record<string, { section?: string; items: NavItem[] }[]> = {
     { section:"System", items: [
       { label:"Activity Logs", short:"Logs", href:"/admin/activity", icon:IC.chart },
       { label:"Settings",  short:"Settings",href:"/admin/settings", icon:IC.gear },
+      { label:"My Profile",  short:"Profile", href:"/profile",        icon:IC.team },
     ]},
   ],
   head_editor: [
@@ -49,6 +50,9 @@ const SIDEBAR: Record<string, { section?: string; items: NavItem[] }[]> = {
       { label:"My Team",   short:"Team",    href:"/head-editor/team",        icon:IC.team },
       { label:"Commission",short:"Earn",    href:"/head-editor/commission",  icon:IC.chart },
     ]},
+    { section:"Account", items: [
+      { label:"My Profile",  short:"Profile", href:"/profile",        icon:IC.team },
+    ]}
   ],
   editor: [
     { items: [
@@ -57,6 +61,9 @@ const SIDEBAR: Record<string, { section?: string; items: NavItem[] }[]> = {
       { label:"Messages",  short:"Chat",    href:"/messages",        icon:IC.chat },
       { label:"Earnings",  short:"Earn",    href:"/editor/earnings", icon:IC.dollar },
     ]},
+    { section:"Account", items: [
+      { label:"My Profile",  short:"Profile", href:"/profile",        icon:IC.team },
+    ]}
   ],
 };
 
@@ -189,14 +196,14 @@ export default function Sidebar({ role="admin", userName="", uid="" }:
 
         <div className="sidebar-footer">
           {uid && <div style={{padding:"0 2px 8px"}}><NotificationBell uid={uid}/></div>}
-          <div className="user-chip" onClick={handleLogout} title="Sign out">
+          <Link href="/profile" className="user-chip" title="My Profile" style={{ textDecoration: "none" }}>
             <div className="user-avatar">{userName?.[0]?.toUpperCase()||"U"}</div>
             <div className="user-info">
               <div className="user-name">{userName}</div>
               <div className="user-role">{ROLE_LABEL[role]||role}</div>
             </div>
-            <span className="nav-icon" style={{opacity:0.4,flexShrink:0}}>{IC.logout}</span>
-          </div>
+            <span className="nav-icon" style={{opacity:0.4,flexShrink:0}}>{IC.gear}</span>
+          </Link>
         </div>
       </aside>
 

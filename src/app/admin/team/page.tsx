@@ -14,6 +14,13 @@ export default function AdminTeam() {
   const [toast, setToast] = useState("");
   const [currentUser, setCurrentUser] = useState<{ uid: string; name: string; email: string } | null>(null);
 
+  // Invite link generator states
+  const [showInviteGenerator, setShowInviteGenerator] = useState(false);
+  const [inviteRole, setInviteRole] = useState<"editor" | "head_editor">("editor");
+  const [inviteExpiry, setInviteExpiry] = useState("24"); // in hours
+  const [generatedLink, setGeneratedLink] = useState("");
+  const [generating, setGenerating] = useState(false);
+
   // Edit Modal States
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [editForm, setEditForm] = useState({
@@ -48,9 +55,34 @@ export default function AdminTeam() {
   const heads = users.filter(u => u.role === "head_editor");
   const active = users.length;
 
-  const copyInvite = () => {
-    navigator.clipboard.writeText("https://crm.skillbridgeladder.in/login?invite=SKILLBRIDGE2026");
-    showToast("✅ Invite link copied!");
+  const handleGenerateInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setGenerating(true);
+    try {
+      const { db } = await initFirebase();
+      const code = "sb_inv_" + Math.random().toString(36).substring(2, 10);
+      const hours = parseInt(inviteExpiry, 10);
+      const expiresAt = new Date(Date.now() + hours * 60 * 60 * 1000);
+      
+      const { doc, setDoc } = await import("firebase/firestore");
+      await setDoc(doc(db, "invites", code), {
+        id: code,
+        role: inviteRole,
+        createdBy: currentUser?.uid || "admin",
+        createdAt: new Date(),
+        expiresAt: expiresAt,
+        status: "active",
+        usedBy: ""
+      });
+
+      const link = window.location.origin + "/login?invite=" + code;
+      setGeneratedLink(link);
+      showToast("✅ Invite link generated successfully!");
+    } catch (err: any) {
+      showToast("❌ Failed to generate invite: " + err.message);
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const handleEditClick = (user: UserProfile) => {
@@ -108,7 +140,7 @@ export default function AdminTeam() {
       <div className="page-header animate-fade">
         <div><h1 className="page-title">Team Management</h1><p className="page-subtitle">All members loaded live from Firebase Auth + Firestore.</p></div>
         <div className="page-actions">
-          <button className="btn btn-secondary" onClick={copyInvite}>🔗 Copy Invite Link</button>
+          <button className="btn btn-primary" onClick={() => { setShowInviteGenerator(true); setGeneratedLink(""); }}>🔗 Generate Invite Link</button>
         </div>
       </div>
 
@@ -222,6 +254,68 @@ export default function AdminTeam() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Invite Generator Modal */}
+      {showInviteGenerator && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "var(--bg-card)", border: "1px solid var(--border-bright)", borderRadius: 16, width: "100%", maxWidth: 500, maxHeight: "95vh", overflow: "auto", boxShadow: "0 32px 80px rgba(0,0,0,0.6)" }}>
+            <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>Generate Dynamic Invite Link</div>
+              <button onClick={() => setShowInviteGenerator(false)} style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 18, cursor: "pointer" }}>✕</button>
+            </div>
+            
+            {!generatedLink ? (
+              <form onSubmit={handleGenerateInvite} style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+                <div className="form-group">
+                  <label className="form-label">Target Member Role</label>
+                  <select className="crm-input" value={inviteRole} onChange={e => setInviteRole(e.target.value as any)}>
+                    <option value="editor">Editor</option>
+                    <option value="head_editor">Head Editor</option>
+                  </select>
+                </div>
+                
+                <div className="form-group">
+                  <label className="form-label">Link Expiry Duration</label>
+                  <select className="crm-input" value={inviteExpiry} onChange={e => setInviteExpiry(e.target.value)}>
+                    <option value="1">1 Hour</option>
+                    <option value="12">12 Hours</option>
+                    <option value="24">24 Hours (1 day)</option>
+                    <option value="168">7 Days (1 week)</option>
+                  </select>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 12 }}>
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowInviteGenerator(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary" disabled={generating}>
+                    {generating ? "Generating..." : "Generate Invite Link"}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+                <div style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: 8, padding: 12, fontSize: 13, color: "#34d399", textAlign: "center" }}>
+                  ✅ Dynamic link generated! This link is valid only for the selected duration and role.
+                </div>
+                
+                <div className="form-group">
+                  <label className="form-label">Invitation Link</label>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input className="crm-input" readOnly value={generatedLink} style={{ flex: 1 }} />
+                    <button className="btn btn-primary" onClick={() => { navigator.clipboard.writeText(generatedLink); showToast("✅ Copied to clipboard!"); }}>
+                      Copy
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 12 }}>
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowInviteGenerator(false)}>Close</button>
+                  <button type="button" className="btn btn-primary" onClick={() => setGeneratedLink("")}>Create Another</button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

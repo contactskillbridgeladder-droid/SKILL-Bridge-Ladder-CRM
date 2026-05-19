@@ -1,55 +1,166 @@
+"use client";
+import { useState, useEffect } from "react";
+import { initFirebase } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
+import { subscribeEditorTasks, Task, UserProfile } from "@/lib/firestore";
+import { StatSkeleton, TableSkeleton } from "@/components/Skeletons";
+import Link from "next/link";
+
 export default function EditorDashboard() {
-  const myTasks = [
-    { id: "T-001", title: "Tech Channel S2E04 – Main Edit", type: "Main Edit", status: "In Review", myEarning: "₹2,000", due: "Today" },
-    { id: "T-005", title: "Finance S1E12 – Main Edit", type: "Main Edit", status: "In Progress", myEarning: "₹2,200", due: "2 days" },
-  ];
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let unsubAuth: (() => void) | undefined;
+    let unsubTasks: (() => void) | undefined;
+
+    initFirebase().then(({ auth, db }) => {
+      unsubAuth = onAuthStateChanged(auth, async (user) => {
+        if (user) {
+          const { doc, getDoc } = await import("firebase/firestore");
+          const snap = await getDoc(doc(db, "users", user.uid));
+          if (snap.exists()) {
+            setCurrentUser(snap.data() as UserProfile);
+          }
+          
+          unsubTasks = subscribeEditorTasks(user.uid, (loadedTasks) => {
+            setTasks(loadedTasks);
+            setLoading(false);
+          });
+        } else {
+          setLoading(false);
+        }
+      });
+    });
+
+    return () => {
+      unsubAuth?.();
+      unsubTasks?.();
+    };
+  }, []);
+
+  const activeTasks = tasks.filter(t => t.status !== "Approved" && t.status !== "Rejected");
+  const completedTasks = tasks.filter(t => t.status === "Approved");
+  const totalEarnings = completedTasks.reduce((sum, t) => sum + (Number(t.editorPay) || 0), 0);
+  const feedbackCount = tasks.filter(t => t.status === "Rejected").length;
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 800 }}>My Dashboard</h1>
+          <p style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 4 }}>Loading your metrics...</p>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
+          <StatSkeleton />
+          <StatSkeleton />
+          <StatSkeleton />
+          <StatSkeleton />
+        </div>
+        <TableSkeleton rows={3} cols={6} />
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade" style={{ display: "flex", flexDirection: "column", gap: 28 }}>
       <div>
-        <h1 style={{ fontSize: 24, fontWeight: 800 }}>My Dashboard</h1>
-        <p style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 4 }}>Your assigned tasks and earnings overview.</p>
+        <h1 style={{ fontSize: 24, fontWeight: 800 }}>Welcome back, {currentUser?.name || "Editor"} 👋</h1>
+        <p style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 4 }}>Your live assigned tasks and earnings overview.</p>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
         {[
-          { label: "Active Tasks", value: "2", icon: "📋" },
-          { label: "Completed", value: "14", icon: "✅" },
-          { label: "My Earnings", value: "₹4,200", icon: "💰" },
-          { label: "Feedback", value: "1", icon: "💬" },
+          { label: "Active Tasks", value: String(activeTasks.length), icon: "📋", color: "icon-purple" },
+          { label: "Completed", value: String(completedTasks.length), icon: "✅", color: "icon-green" },
+          { label: "My Earnings", value: `₹${totalEarnings.toLocaleString()}`, icon: "💰", color: "icon-blue" },
+          { label: "Rejected / Corrections", value: String(feedbackCount), icon: "💬", color: "icon-amber" },
         ].map(s => (
           <div key={s.label} className="stat-card">
-            <div style={{ fontSize: 24 }}>{s.icon}</div>
-            <div className="stat-value">{s.value}</div>
-            <div className="stat-label">{s.label}</div>
+            <div className={`stat-icon-wrap ${s.color}`} style={{ fontSize: 20 }}>{s.icon}</div>
+            <div className="stat-bottom">
+              <div className="stat-value">{s.value}</div>
+              <div className="stat-label">{s.label}</div>
+            </div>
           </div>
         ))}
       </div>
 
-      <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-        <div style={{ padding: "20px", borderBottom: "1px solid var(--border)" }}>
-          <h2 style={{ fontSize: 16, fontWeight: 700 }}>My Assigned Tasks</h2>
+      <div className="section-card animate-fade" style={{ padding: 0, overflow: "hidden" }}>
+        <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <h2 style={{ fontSize: 16, fontWeight: 700 }}>My Assigned Tasks</h2>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>Only showing tasks assigned directly to you</p>
+          </div>
+          <Link href="/editor/tasks" className="btn btn-secondary btn-sm" style={{ textDecoration: "none" }}>
+            View Detailed Tasks
+          </Link>
         </div>
-        <table className="crm-table">
-          <thead>
-            <tr>
-              <th>ID</th><th>Task</th><th>Type</th><th>Status</th><th>My Earning</th><th>Due</th><th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {myTasks.map(t => (
-              <tr key={t.id}>
-                <td style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text-muted)" }}>{t.id}</td>
-                <td style={{ color: "var(--text)", fontWeight: 500 }}>{t.title}</td>
-                <td><span className={`badge ${t.type === "Shorts" ? "badge-blue" : "badge-purple"}`}>{t.type}</span></td>
-                <td><span className="badge badge-yellow">{t.status}</span></td>
-                <td style={{ fontWeight: 600, color: "var(--green)" }}>{t.myEarning}</td>
-                <td style={{ color: t.due === "Today" ? "var(--yellow)" : "var(--text-dim)" }}>{t.due}</td>
-                <td><button className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }}>Submit</button></td>
+        
+        <div className="crm-table-wrap">
+          <table className="crm-table">
+            <thead>
+              <tr>
+                <th>Task Name</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>My Pay</th>
+                <th>Due Date</th>
+                <th>Action</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {tasks.length === 0 ? (
+                <tr>
+                  <td colSpan={6}>
+                    <div className="empty-state" style={{ padding: "40px 20px" }}>
+                      <div className="empty-icon">📋</div>
+                      <div className="empty-title">No tasks assigned yet</div>
+                      <div className="empty-desc">You'll see your assigned tasks and edit links here.</div>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                tasks.slice(0, 5).map(t => (
+                  <tr key={t.id}>
+                    <td>
+                      <div>
+                        <span className="cell-strong" style={{ fontSize: 13 }}>{t.title}</span>
+                        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>{t.channel}</div>
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`badge ${t.type === "Shorts" ? "badge-blue" : "badge-purple"}`}>
+                        {t.type}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`badge ${
+                        t.status === "Approved" ? "badge-green" :
+                        t.status === "Rejected" ? "badge-red" :
+                        t.status === "In Review" ? "badge-purple" : "badge-amber"
+                      }`}>
+                        {t.status}
+                      </span>
+                    </td>
+                    <td style={{ fontWeight: 600, color: "var(--green)" }}>
+                      ₹{t.editorPay?.toLocaleString() || "0"}
+                    </td>
+                    <td style={{ color: t.due ? "var(--text)" : "var(--text-dim)" }}>
+                      {t.due || "No date"}
+                    </td>
+                    <td>
+                      <Link href="/editor/tasks" className="btn btn-ghost btn-sm" style={{ textDecoration: "none" }}>
+                        Manage
+                      </Link>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

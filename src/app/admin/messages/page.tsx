@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
 import { initFirebase } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 import { getUsers, UserProfile } from "@/lib/firestore";
 import { useRouter } from "next/navigation";
 import { ref, set, push, onValue, off, update } from "firebase/database";
@@ -58,46 +59,52 @@ export default function AdminMessagesPage() {
 
   // Initialize Firebase and load users
   useEffect(() => {
+    let unsubAuth: (() => void) | undefined;
     initFirebase().then(async ({ auth, db: firestoreDb, rtdb: realDb }) => {
-      const u = auth.currentUser;
-      if (!u) { router.push("/login"); return; }
-      setDb(firestoreDb);
-      setRtdb(realDb);
+      unsubAuth = onAuthStateChanged(auth, async (u) => {
+        if (!u) {
+          router.push("/login");
+          return;
+        }
+        setDb(firestoreDb);
+        setRtdb(realDb);
 
-      const { doc: fsDoc, getDoc } = await import("firebase/firestore");
-      const userSnap = await getDoc(fsDoc(firestoreDb, "users", u.uid));
-      const profile = userSnap.data() as UserProfile;
-      
-      // Strict role check for admins only
-      if (profile.role !== "admin") {
-        router.push("/messages");
-        return;
-      }
-      setCurrentUser(profile);
+        const { doc: fsDoc, getDoc } = await import("firebase/firestore");
+        const userSnap = await getDoc(fsDoc(firestoreDb, "users", u.uid));
+        const profile = userSnap.data() as UserProfile;
+        
+        // Strict role check for admins only
+        if (profile.role !== "admin") {
+          router.push("/messages");
+          return;
+        }
+        setCurrentUser(profile);
 
-      // Load all users
-      const allUsers = await getUsers();
+        // Load all users
+        const allUsers = await getUsers();
 
-      // Admins see all users except themselves
-      const filtered = allUsers.filter(user => user.uid !== profile.uid);
+        // Admins see all users except themselves
+        const filtered = allUsers.filter(user => user.uid !== profile.uid);
 
-      setContacts(filtered);
-      setLoading(false);
+        setContacts(filtered);
+        setLoading(false);
 
-      // Listen to metadata for all chats
-      filtered.forEach(c => {
-        const chatId = [profile.uid, c.uid].sort().join("_");
-        const metaRef = ref(realDb, `chats/${chatId}/metadata`);
-        onValue(metaRef, snap => {
-          if (snap.exists()) {
-            setChatMetadata(prev => ({
-              ...prev,
-              [c.uid]: snap.val()
-            }));
-          }
+        // Listen to metadata for all chats
+        filtered.forEach(c => {
+          const chatId = [profile.uid, c.uid].sort().join("_");
+          const metaRef = ref(realDb, `chats/${chatId}/metadata`);
+          onValue(metaRef, snap => {
+            if (snap.exists()) {
+              setChatMetadata(prev => ({
+                ...prev,
+                [c.uid]: snap.val()
+              }));
+            }
+          });
         });
       });
     });
+    return () => unsubAuth?.();
   }, [router]);
 
   // Handle active chat changes & subscribe to messages
@@ -306,11 +313,11 @@ export default function AdminMessagesPage() {
                     className={`chat-contact-item${activeChat?.uid === c.uid ? " active" : ""}`}
                   >
                     <div className="chat-contact-avatar">
-                      {c.name[0].toUpperCase()}
+                      {(c.name || c.email || "U")[0].toUpperCase()}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                        <div style={{ fontWeight: 600, fontSize: 13.5, color: "var(--text)" }}>{c.name}</div>
+                        <div style={{ fontWeight: 600, fontSize: 13.5, color: "var(--text)" }}>{c.name || c.email}</div>
                         {meta.lastTimestamp && (
                           <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
                             {formatDate(meta.lastTimestamp)}
@@ -355,10 +362,10 @@ export default function AdminMessagesPage() {
                     </button>
                   )}
                   <div className="chat-contact-avatar" style={{ width: 38, height: 38, fontSize: 14 }}>
-                    {activeChat.name[0].toUpperCase()}
+                    {(activeChat.name || activeChat.email || "U")[0].toUpperCase()}
                   </div>
                   <div>
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>{activeChat.name}</div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{activeChat.name || activeChat.email}</div>
                     <div style={{ fontSize: 11.5, color: "var(--text-muted)", textTransform: "capitalize" }}>
                       {typing[activeChat.uid] ? (
                         <span style={{ color: "#a78bfa", fontWeight: 500 }}>typing…</span>
@@ -471,10 +478,10 @@ export default function AdminMessagesPage() {
 
           <div style={{ padding: 24, display: "flex", flexDirection: "column", alignItems: "center", gap: 16, textAlign: "center" }}>
             <div className="chat-contact-avatar" style={{ width: 70, height: 70, fontSize: 24 }}>
-              {activeChat.name[0].toUpperCase()}
+              {(activeChat.name || activeChat.email || "U")[0].toUpperCase()}
             </div>
             <div>
-              <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>{activeChat.name}</h3>
+              <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>{activeChat.name || activeChat.email}</h3>
               <p style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 4, textTransform: "capitalize" }}>
                 {activeChat.role.replace("_", " ")}
               </p>

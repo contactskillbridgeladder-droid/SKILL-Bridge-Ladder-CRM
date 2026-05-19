@@ -17,11 +17,12 @@ export default function AdminSettings() {
       <div className="section-card animate-fade" style={{padding:28}}>
         <div style={{marginBottom:20}}>
           <div style={{fontWeight:700,fontSize:15,marginBottom:4}}>Invite Team Members</div>
-          <div style={{fontSize:13,color:"var(--text-muted)"}}>Share this link with editors or head editors. New accounts default to the Editor role.</div>
+          <div style={{fontSize:13,color:"var(--text-muted)"}}>Generate temporary, unique invitation links with customizable expiry times.</div>
         </div>
-        <div style={{display:"flex",gap:10}}>
-          <input className="crm-input" readOnly value={inviteLink} style={{flex:1}} />
-          <button className="btn btn-primary" onClick={copy}>{copied?"✅ Copied!":"Copy Link"}</button>
+        <div>
+          <a href="/admin/team" className="btn btn-primary" style={{display:"inline-block",textDecoration:"none"}}>
+            Go to Team Management to Generate Link
+          </a>
         </div>
       </div>
 
