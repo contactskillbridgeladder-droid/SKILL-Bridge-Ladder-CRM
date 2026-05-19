@@ -11,9 +11,9 @@ const FIRESTORE_URL = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID
 const CF_WORKER = process.env.NEXT_PUBLIC_CF_WORKER_URL!;
 
 async function getAccessToken(): Promise<string> {
+  const { getGoogleAuthCredentials } = await import("@/lib/firebase-admin");
   const { GoogleAuth } = await import("google-auth-library");
-  const keyPath = path.resolve(process.cwd(), "skillbridge-crm-firebase-adminsdk-fbsvc-3d64026130.json");
-  const key = JSON.parse(readFileSync(keyPath, "utf-8"));
+  const key = getGoogleAuthCredentials();
   const auth = new GoogleAuth({ credentials: key, scopes: ["https://www.googleapis.com/auth/cloud-platform"] });
   const client = await auth.getClient();
   const t = await client.getAccessToken();
