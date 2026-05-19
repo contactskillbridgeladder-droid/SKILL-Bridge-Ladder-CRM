@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
-import { getChannels, getUsers, Channel, UserProfile } from "@/lib/firestore";
-import Image from "next/image";
+import { getChannels, getUsers, logAIAnalysis, getAIAnalysisLogs, AIAnalysisLog, Channel, UserProfile } from "@/lib/firestore";
+import { initFirebase } from "@/lib/firebase";
 
 interface Suggestion {
   timestamp: string;
@@ -20,8 +20,13 @@ export default function VideoAIPage() {
 
   const [channels, setChannels] = useState<Channel[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [logs, setLogs] = useState<AIAnalysisLog[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(true);
   const [matchedChannelId, setMatchedChannelId] = useState("");
   const [toast, setToast] = useState("");
+
+  // Scan status ticker state
+  const [scanStep, setScanStep] = useState(0);
 
   // Segment task forms states (keyed by index)
   const [assignments, setAssignments] = useState<Record<number, {
@@ -39,7 +44,25 @@ export default function VideoAIPage() {
   useEffect(() => {
     getChannels().then(setChannels);
     getUsers().then(setUsers);
+    getAIAnalysisLogs().then(l => {
+      setLogs(l);
+      setLoadingLogs(false);
+    });
   }, []);
+
+  // Interval for scanning text status updates
+  useEffect(() => {
+    let interval: any;
+    if (analyzing) {
+      setScanStep(0);
+      interval = setInterval(() => {
+        setScanStep(s => (s < 3 ? s + 1 : 3));
+      }, 2500);
+    } else {
+      setScanStep(0);
+    }
+    return () => clearInterval(interval);
+  }, [analyzing]);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -97,6 +120,20 @@ export default function VideoAIPage() {
         });
       }
       setAssignments(initialAssignments);
+
+      // Save AI analysis log
+      initFirebase().then(async ({ auth }) => {
+        const u = auth.currentUser;
+        if (u) {
+          await logAIAnalysis(url, data.title, data.suggestions.length, {
+            uid: u.uid,
+            email: u.email || "hr@skillbridgeladder.in"
+          });
+          const freshLogs = await getAIAnalysisLogs();
+          setLogs(freshLogs);
+        }
+      });
+
     } catch (err: any) {
       showToast("❌ Analysis failed: " + err.message);
     } finally {
@@ -195,6 +232,27 @@ export default function VideoAIPage() {
           </button>
         </form>
       </div>
+
+      {/* Analyzing Scanning Loader animation */}
+      {analyzing && (
+        <div className="section-card animate-fade" style={{ padding: 36, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20, border: "1px solid rgba(124, 58, 237, 0.4)", background: "rgba(124, 58, 237, 0.03)" }}>
+          <div className="ai-scanning-wrapper">
+            <div className="ai-scanning-grid"></div>
+            <div className="ai-scanning-ray"></div>
+            <div className="ai-scanning-logo">🧠</div>
+          </div>
+          <div style={{ textAlign: "center" }}>
+            <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Gemini Video Scanner Active</h3>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 6 }}>Processing video frames and scanning transcripts...</p>
+          </div>
+          <div className="ai-status-ticks">
+            <div className={`tick ${scanStep >= 0 ? "active" : ""}`}>Contacting video streams...</div>
+            <div className={`tick ${scanStep >= 1 ? "active" : ""}`}>Extracting frame sequences and transcript metadata...</div>
+            <div className={`tick ${scanStep >= 2 ? "active" : ""}`}>Scanning content clusters with Gemini...</div>
+            <div className={`tick ${scanStep >= 3 ? "active" : ""}`}>Generating timestamped highlights...</div>
+          </div>
+        </div>
+      )}
 
       {/* Results Section */}
       {result && (
@@ -360,6 +418,57 @@ export default function VideoAIPage() {
           </div>
         </div>
       )}
+
+      {/* AI Analysis logs history */}
+      <div className="section-card animate-fade">
+        <div className="section-header">
+          <div>
+            <div className="section-title">AI Analysis History</div>
+            <div className="section-subtitle">Track all past video analysis runs and generated highlight suggestions</div>
+          </div>
+        </div>
+
+        {loadingLogs ? (
+          <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>⏳ Loading analysis history…</div>
+        ) : logs.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">🧠</div>
+            <div className="empty-title">No analysis logs yet</div>
+            <div className="empty-desc">Paste a link above to start utilizing Gemini.</div>
+          </div>
+        ) : (
+          <div className="crm-table-wrap">
+            <table className="crm-table">
+              <thead>
+                <tr>
+                  <th>Video Title</th>
+                  <th>Video URL</th>
+                  <th>Suggestions</th>
+                  <th>Performed By</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logs.map(log => (
+                  <tr key={log.id}>
+                    <td><span className="cell-strong">{log.title}</span></td>
+                    <td>
+                      <a href={log.url} target="_blank" rel="noopener noreferrer" style={{ color: "#38bdf8", textDecoration: "none", fontSize: 12.5 }} className="cell-mono">
+                        {log.url.length > 35 ? log.url.slice(0, 35) + "..." : log.url}
+                      </a>
+                    </td>
+                    <td><span className="badge badge-purple">{log.suggestionsCount} suggestions</span></td>
+                    <td style={{ fontSize: 13 }}>{log.performedByEmail}</td>
+                    <td style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                      {log.createdAt?.toDate?.()?.toLocaleString("en-IN") || "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

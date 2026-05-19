@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { subscribeAllTasks, createTask, updateTask, getUsers, getChannels, Task, UserProfile, Channel } from "@/lib/firestore";
 import { initFirebase } from "@/lib/firebase";
+import { TableSkeleton } from "@/components/Skeletons";
 
 const statusMap: Record<string, string> = {
   "Open": "badge-blue", "Pending": "badge-amber", "In Progress": "badge-purple",
@@ -138,9 +139,7 @@ export default function AdminTasks() {
       {/* Table */}
       <div className="section-card animate-fade">
         {loading ? (
-          <div style={{ padding: 60, textAlign: "center", color: "var(--text-muted)" }}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>Loading tasks from Firebase…
-          </div>
+          <TableSkeleton rows={8} cols={9} />
         ) : (
           <div className="crm-table-wrap">
             <table className="crm-table">

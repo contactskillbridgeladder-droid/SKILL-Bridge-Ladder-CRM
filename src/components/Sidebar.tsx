@@ -29,7 +29,7 @@ const SIDEBAR: Record<string, { section?: string; items: NavItem[] }[]> = {
     { items: [
       { label:"Dashboard", short:"Home",    href:"/admin",          icon:IC.grid },
       { label:"Tasks",     short:"Tasks",   href:"/admin/tasks",    icon:IC.tasks },
-      { label:"Messages",  short:"Chat",    href:"/messages",       icon:IC.chat },
+      { label:"Messages",  short:"Chat",    href:"/admin/messages", icon:IC.chat },
     ]},
     { section:"Management", items: [
       { label:"Team",      short:"Team",    href:"/admin/team",     icon:IC.team },
@@ -37,6 +37,7 @@ const SIDEBAR: Record<string, { section?: string; items: NavItem[] }[]> = {
       { label:"Finance",   short:"Finance", href:"/admin/finance",  icon:IC.dollar },
     ]},
     { section:"System", items: [
+      { label:"Activity Logs", short:"Logs", href:"/admin/activity", icon:IC.chart },
       { label:"Settings",  short:"Settings",href:"/admin/settings", icon:IC.gear },
     ]},
   ],
@@ -65,7 +66,7 @@ const MOBILE: Record<string, NavItem[]> = {
     { label:"Home",    short:"Home",    href:"/admin",          icon:IC.grid },
     { label:"Tasks",   short:"Tasks",   href:"/admin/tasks",    icon:IC.tasks },
     { label:"Team",    short:"Team",    href:"/admin/team",     icon:IC.team },
-    { label:"Chat",    short:"Chat",    href:"/messages",       icon:IC.chat },
+    { label:"Chat",    short:"Chat",    href:"/admin/messages", icon:IC.chat },
   ],
   head_editor: [
     { label:"Home",    short:"Home",    href:"/head-editor",             icon:IC.grid },

@@ -76,6 +76,7 @@ export interface UserProfile {
   name: string;
   role: "admin" | "head_editor" | "editor";
   sourced_by?: string;
+  whatsappNumber?: string;
   createdAt?: any;
 }
 
@@ -199,6 +200,86 @@ export function subscribeEditorTasks(editorUid: string, cb: (tasks: Task[]) => v
     unsub = onSnapshot(q, snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() } as Task))));
   });
   return () => unsub?.();
+}
+
+export async function updateUserProfile(uid: string, data: Partial<UserProfile>): Promise<void> {
+  const db = await getDb();
+  await updateDoc(doc(db, "users", uid), data);
+}
+
+// ── AUDIT LOGS ──────────────────────────────────────────────────────────────
+export interface AuditLog {
+  id?: string;
+  action: string;
+  details: string;
+  performedByUid: string;
+  performedByName: string;
+  performedByEmail: string;
+  createdAt?: any;
+}
+
+export async function logActivity(
+  action: string,
+  details: string,
+  user: { uid: string; name: string; email: string }
+): Promise<void> {
+  try {
+    const db = await getDb();
+    await addDoc(collection(db, "audit_logs"), {
+      action,
+      details,
+      performedByUid: user.uid,
+      performedByName: user.name || "Unknown",
+      performedByEmail: user.email,
+      createdAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.error("Failed to log activity:", err);
+  }
+}
+
+export async function getAuditLogs(): Promise<AuditLog[]> {
+  const db = await getDb();
+  const snap = await getDocs(query(collection(db, "audit_logs"), orderBy("createdAt", "desc")));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as AuditLog));
+}
+
+// ── AI ANALYSIS LOGS ─────────────────────────────────────────────────────────
+export interface AIAnalysisLog {
+  id?: string;
+  url: string;
+  title: string;
+  suggestionsCount: number;
+  performedByUid: string;
+  performedByEmail: string;
+  createdAt?: any;
+}
+
+export async function logAIAnalysis(
+  url: string,
+  title: string,
+  suggestionsCount: number,
+  user: { uid: string; email: string }
+): Promise<void> {
+  try {
+    const db = await getDb();
+    await addDoc(collection(db, "ai_analysis_logs"), {
+      url,
+      title,
+      suggestionsCount,
+      performedByUid: user.uid,
+      performedByEmail: user.email,
+      createdAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.error("Failed to log AI analysis:", err);
+  }
+}
+
+export async function getAIAnalysisLogs(): Promise<AIAnalysisLog[]> {
+  const db = await getDb();
+  const snap = await getDocs(query(collection(db, "ai_analysis_logs"), orderBy("createdAt", "desc")));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as AIAnalysisLog));
 }
 
 

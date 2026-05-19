@@ -22,6 +22,8 @@ export const metadata: Metadata = {
   },
 };
 
+import StartupLoader from "@/components/StartupLoader";
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
@@ -51,6 +53,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
+        <StartupLoader />
         {children}
       </body>
     </html>

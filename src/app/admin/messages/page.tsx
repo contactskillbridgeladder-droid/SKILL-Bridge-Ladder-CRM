@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from "react";
 import { initFirebase } from "@/lib/firebase";
 import { getUsers, UserProfile } from "@/lib/firestore";
 import { useRouter } from "next/navigation";
-import { ref, set, push, onValue, off, update, serverTimestamp } from "firebase/database";
+import { ref, set, push, onValue, off, update } from "firebase/database";
 import { doc, updateDoc } from "firebase/firestore";
 
 interface Message {
@@ -22,7 +22,7 @@ interface ChatMetadata {
   unreadCount?: Record<string, number>;
 }
 
-export default function MessagesPage() {
+export default function AdminMessagesPage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [contacts, setContacts] = useState<UserProfile[]>([]);
@@ -67,8 +67,10 @@ export default function MessagesPage() {
       const { doc: fsDoc, getDoc } = await import("firebase/firestore");
       const userSnap = await getDoc(fsDoc(firestoreDb, "users", u.uid));
       const profile = userSnap.data() as UserProfile;
-      if (profile.role === "admin") {
-        router.push("/admin/messages");
+      
+      // Strict role check for admins only
+      if (profile.role !== "admin") {
+        router.push("/messages");
         return;
       }
       setCurrentUser(profile);
@@ -76,24 +78,8 @@ export default function MessagesPage() {
       // Load all users
       const allUsers = await getUsers();
 
-      // Filter contacts based on roles
-      // Admin: See all users
-      // Head Editor: See admins + editors sourced by them
-      // Editor: See admins + head editor who sourced them
-      const filtered = allUsers.filter(user => {
-        if (user.uid === profile.uid) return false; // Don't message yourself
-        if (profile.role === "admin") return true;
-
-        if (profile.role === "head_editor") {
-          return user.role === "admin" || (user.role === "editor" && user.sourced_by === profile.uid);
-        }
-
-        if (profile.role === "editor") {
-          return user.role === "admin" || (user.role === "head_editor" && user.uid === profile.sourced_by);
-        }
-
-        return false;
-      });
+      // Admins see all users except themselves
+      const filtered = allUsers.filter(user => user.uid !== profile.uid);
 
       setContacts(filtered);
       setLoading(false);
@@ -275,16 +261,10 @@ export default function MessagesPage() {
   if (loading || !currentUser) {
     return (
       <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)" }}>
-        <div style={{ color: "var(--text-muted)", fontSize: 14 }}>⏳ Loading Secure Messages…</div>
+        <div style={{ color: "var(--text-muted)", fontSize: 14 }}>⏳ Loading Secure Admin Messages…</div>
       </div>
     );
   }
-
-  // Can the current user edit the selected profile?
-  // Only Admin can edit anyone's profile.
-  // Head Editor can edit editors sourced by them.
-  const canEditProfile = currentUser.role === "admin" ||
-    (currentUser.role === "head_editor" && activeChat?.role === "editor" && activeChat?.sourced_by === currentUser.uid);
 
   return (
     <div className="chat-layout">
@@ -292,8 +272,8 @@ export default function MessagesPage() {
       {(!activeChat || !isMobileView) && (
         <div className="chat-sidebar">
           <div className="chat-sidebar-header">
-            <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Secure Messages</h2>
-            <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>Real-time chat &amp; task updates</p>
+            <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Admin Secure Chat</h2>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>Real-time team chat &amp; task updates</p>
           </div>
 
           <div style={{ padding: "0 16px 12px" }}>
@@ -311,7 +291,7 @@ export default function MessagesPage() {
           <div className="chat-contact-list">
             {filteredContacts.length === 0 ? (
               <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
-                No eligible contacts found.
+                No team contacts found.
               </div>
             ) : (
               filteredContacts.map(c => {
@@ -467,9 +447,9 @@ export default function MessagesPage() {
           ) : (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.05)" }}>
               <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
-              <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>SkillBridge Secure Chat</h2>
+              <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>SkillBridge Admin Secure Chat</h2>
               <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 6, maxWidth: 300, textAlign: "center", lineHeight: 1.5 }}>
-                Real-time end-to-end messaging network. Select a contact to begin communicating securely.
+                Real-time end-to-end messaging network. Select a team member to begin communicating securely.
               </p>
             </div>
           )}
@@ -525,15 +505,13 @@ export default function MessagesPage() {
                   </div>
                 </div>
 
-                {canEditProfile && (
-                  <button
-                    onClick={() => setIsEditingInfo(true)}
-                    className="btn btn-secondary btn-sm"
-                    style={{ marginTop: 12 }}
-                  >
-                    ✏️ Edit Profile Details
-                  </button>
-                )}
+                <button
+                  onClick={() => setIsEditingInfo(true)}
+                  className="btn btn-secondary btn-sm"
+                  style={{ marginTop: 12 }}
+                >
+                  ✏️ Edit Profile Details
+                </button>
               </div>
             ) : (
               <form onSubmit={saveContactInfo} style={{ display: "flex", flexDirection: "column", gap: 14 }}>

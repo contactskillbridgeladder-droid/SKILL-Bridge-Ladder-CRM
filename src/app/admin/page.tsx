@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { subscribeAllTasks, getUsers, Task } from "@/lib/firestore";
+import { StatSkeleton, TableSkeleton } from "@/components/Skeletons";
 
 const statusMap: Record<string, string> = {
   "Open": "badge-blue", "Pending": "badge-amber", "In Progress": "badge-purple",
@@ -55,7 +56,14 @@ export default function AdminDashboard() {
       </div>
 
       <div className="stats-grid">
-        {[
+        {loading ? (
+          <>
+            <StatSkeleton />
+            <StatSkeleton />
+            <StatSkeleton />
+            <StatSkeleton />
+          </>
+        ) : [
           { label: "Active Tasks", value: String(activeTasks), delta: `${tasks.length} total`, up: true, icon: "📋", color: "icon-purple" },
           { label: "Team Members", value: String(userCount), delta: "from Firebase Auth", up: true, icon: "👥", color: "icon-blue" },
           { label: "Admin Revenue", value: totalRevenue > 0 ? `₹${totalRevenue.toLocaleString("en-IN")}` : "₹0", delta: "from approved tasks", up: true, icon: "💰", color: "icon-green" },
@@ -85,7 +93,7 @@ export default function AdminDashboard() {
         </div>
 
         {loading ? (
-          <div style={{ padding: 60, textAlign: "center", color: "var(--text-muted)" }}>⏳ Loading from Firebase…</div>
+          <TableSkeleton rows={5} cols={7} />
         ) : (
           <div className="crm-table-wrap">
             <table className="crm-table">
