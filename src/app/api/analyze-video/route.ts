@@ -26,15 +26,24 @@ export async function POST(req: Request) {
     if (!apiKey) {
       try {
         const WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL || "https://skillbridge-crm-env.contact-skillbridgeladder.workers.dev";
-        const authKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyAdcmMhLCUjeZIRlaRRZd8h9PywN6_Gu1Q";
-        const cfgRes = await fetch(`${WORKER_URL}/config/secrets`, {
-          headers: {
-            "Authorization": `Bearer ${authKey}`
+        let authKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "";
+        if (!authKey) {
+          const cfgPublicRes = await fetch(`${WORKER_URL}/config`);
+          if (cfgPublicRes.ok) {
+            const cfgPublic = await cfgPublicRes.json();
+            authKey = cfgPublic.apiKey;
           }
-        });
-        if (cfgRes.ok) {
-          const cfg = await cfgRes.json();
-          apiKey = cfg.geminiApiKey;
+        }
+        if (authKey) {
+          const cfgRes = await fetch(`${WORKER_URL}/config/secrets`, {
+            headers: {
+              "Authorization": `Bearer ${authKey}`
+            }
+          });
+          if (cfgRes.ok) {
+            const cfg = await cfgRes.json();
+            apiKey = cfg.geminiApiKey;
+          }
         }
       } catch (err) {
         console.error("Failed to fetch gemini api key from cloudflare worker secrets endpoint:", err);
