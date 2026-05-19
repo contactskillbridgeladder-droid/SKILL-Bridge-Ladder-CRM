@@ -127,8 +127,10 @@ export default function Sidebar({ role="admin", userName="", uid="" }:
       const token = await getFCMToken();
       if (token && uid) {
         const { db } = await initFirebase();
-        const { doc, updateDoc } = await import("firebase/firestore");
-        await updateDoc(doc(db, "users", uid), { fcmToken: token });
+        if (db) {
+          const { doc, updateDoc } = await import("firebase/firestore");
+          await updateDoc(doc(db, "users", uid), { fcmToken: token });
+        }
       }
     } catch (e) { console.error("FCM token error:", e); }
   };

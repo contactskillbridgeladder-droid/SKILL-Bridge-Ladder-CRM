@@ -124,6 +124,16 @@ export async function createChannel(data: Omit<Channel, "id">): Promise<string> 
   return ref.id;
 }
 
+export async function updateChannel(id: string, data: Partial<Channel>): Promise<void> {
+  const db = await getDb();
+  await updateDoc(doc(db, "channels", id), data);
+}
+
+export async function deleteChannel(id: string): Promise<void> {
+  const db = await getDb();
+  await deleteDoc(doc(db, "channels", id));
+}
+
 // ── PAYMENTS ──────────────────────────────────────────────────────────────────
 export interface Payment {
   id?: string;
