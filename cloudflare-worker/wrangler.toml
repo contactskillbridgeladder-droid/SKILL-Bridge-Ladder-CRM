@@ -1,0 +1,18 @@
+name = "skillbridge-crm-env"
+main = "src/index.ts"
+compatibility_date = "2024-05-19"
+
+# Variables are stored here for local development. 
+# For production, set these securely using: npx wrangler secret put <KEY>
+[vars]
+FIREBASE_API_KEY = "AIzaSyAdcmMhLCUjeZIRlaRRZd8h9PywN6_Gu1Q"
+FIREBASE_AUTH_DOMAIN = "auth.crm.skillbridgeladder.in"
+FIREBASE_DATABASE_URL = "https://skillbridge-crm-default-rtdb.firebaseio.com"
+FIREBASE_PROJECT_ID = "skillbridge-crm"
+FIREBASE_STORAGE_BUCKET = "skillbridge-crm.firebasestorage.app"
+FIREBASE_MESSAGING_SENDER_ID = "141902383537"
+FIREBASE_APP_ID = "1:141902383537:web:5269fd7bb248d2d02e5590"
+FIREBASE_MEASUREMENT_ID = "G-8Y6C6ZWBZ9"
+FIREBASE_VAPID_KEY = "BKosfe_vqNM7uJqLqC3Se9jv5mS9FeQLs5UGM5KZpgh7Oc-TnJyP-nCqlpov1ifN5RvNRzwuHTH993ZyJSbR1Sk"
+RESEND_API_KEY = "re_3JYrZhJS_539RCDPMBicnYnaoerQwsVWC"
+GEMINI_API_KEY = "AIzaSyAReIerpU79Etpp4l10FEXW9xk3pMjAz_8"

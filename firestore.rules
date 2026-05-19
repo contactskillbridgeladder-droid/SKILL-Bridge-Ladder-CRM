@@ -1,0 +1,57 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: check caller's role from their user doc
+    function userRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+    function isAdmin()      { return isSignedIn() && userRole() == 'admin'; }
+    function isHeadEditor() { return isSignedIn() && (userRole() == 'head_editor' || isAdmin()); }
+    function isEditor()     { return isSignedIn() && (userRole() == 'editor' || isHeadEditor()); }
+    function isSignedIn()   { return request.auth != null; }
+
+    // ── Users collection ──────────────────────────────────────────────────────
+    match /users/{uid} {
+      // Any authenticated user can read their own doc; admin can read all
+      allow read:  if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      // Only admin or the user themselves can write
+      allow write: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+
+      // Notifications sub-collection
+      match /notifications/{notifId} {
+        allow read, write: if isSignedIn() && request.auth.uid == uid;
+      }
+    }
+
+    // ── Tasks ─────────────────────────────────────────────────────────────────
+    match /tasks/{taskId} {
+      // Admin: full CRUD
+      // Head Editor: read all, update their supervised tasks
+      // Editor: read only tasks assigned to them
+      allow read:   if isHeadEditor()
+                    || (isSignedIn() && resource.data.editorUid == request.auth.uid);
+      allow create: if isAdmin();
+      allow update: if isAdmin()
+                    || (isSignedIn() && resource.data.editorUid == request.auth.uid
+                        && request.resource.data.diff(resource.data).affectedKeys()
+                               .hasOnly(['submissionLink','status','updatedAt']));
+      allow delete: if isAdmin();
+    }
+
+    // ── Channels ──────────────────────────────────────────────────────────────
+    match /channels/{channelId} {
+      allow read:   if isSignedIn();
+      allow write:  if isAdmin();
+    }
+
+    // ── Payments ──────────────────────────────────────────────────────────────
+    match /payments/{paymentId} {
+      allow read:   if isAdmin()
+                    || (isSignedIn() && resource.data.toUid == request.auth.uid);
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+  }
+}

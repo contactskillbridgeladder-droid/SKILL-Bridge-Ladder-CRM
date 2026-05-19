@@ -1,0 +1,20 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "hosting": {
+    "source": ".",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**",
+      "skillbridge-crm-firebase-adminsdk-fbsvc-3d64026130.json",
+      "**/.env*",
+      "**/*.pem",
+      "**/*.key",
+      "wrangler.toml",
+      "cloudflare-worker/**"
+    ]
+  }
+}
