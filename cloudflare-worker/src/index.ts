@@ -32,6 +32,7 @@ export default {
       const referer = request.headers.get("Referer") || "";
 
       const isAllowed = 
+        !origin && !referer ||
         origin.includes("localhost") || 
         origin.includes("127.0.0.1") || 
         origin.includes("skillbridgeladder.in") ||
