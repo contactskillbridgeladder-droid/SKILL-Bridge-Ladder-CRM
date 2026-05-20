@@ -1,53 +1,72 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 
 export default function PWAUpdater() {
   const [show, setShow] = useState(false);
-  const [registration, setRegistration] = useState<ServiceWorkerRegistration | null>(null);
+  const regRef = useRef<ServiceWorkerRegistration | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
 
-    // Check on load
-    navigator.serviceWorker.getRegistration().then((reg) => {
-      if (reg) {
-        setRegistration(reg);
-        if (reg.waiting) {
-          setShow(true);
-        }
-      }
-    });
-
-    // Handle updates found
-    navigator.serviceWorker.ready.then((reg) => {
-      setRegistration(reg);
-      reg.addEventListener("updatefound", () => {
-        const newWorker = reg.installing;
-        if (!newWorker) return;
-        newWorker.addEventListener("statechange", () => {
-          if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
-            setShow(true);
-          }
-        });
-      });
-    });
-
-    // Reload page when new service worker takes over control
     let refreshing = false;
+
+    // When a new SW takes control, reload the page to apply the update
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       if (!refreshing) {
         refreshing = true;
         window.location.reload();
       }
     });
+
+    // Helper: show the banner if a waiting SW is detected
+    function checkForWaiting(reg: ServiceWorkerRegistration) {
+      regRef.current = reg;
+      if (reg.waiting) {
+        setShow(true);
+      }
+    }
+
+    // Helper: watch a newly installing SW until it reaches "installed" state
+    function trackInstalling(reg: ServiceWorkerRegistration) {
+      const sw = reg.installing;
+      if (!sw) return;
+      sw.addEventListener("statechange", () => {
+        if (sw.state === "installed" && navigator.serviceWorker.controller) {
+          // New version is waiting — show the banner
+          regRef.current = reg;
+          setShow(true);
+        }
+      });
+    }
+
+    navigator.serviceWorker.ready.then((reg) => {
+      regRef.current = reg;
+
+      // Check immediately if something is already waiting
+      checkForWaiting(reg);
+
+      // Watch for future updates
+      reg.addEventListener("updatefound", () => {
+        trackInstalling(reg);
+      });
+
+      // Poll for updates every 60 seconds while the tab is open
+      const interval = setInterval(() => {
+        reg.update().catch(() => {});
+      }, 60_000);
+
+      return () => clearInterval(interval);
+    });
   }, []);
 
   const handleUpdate = () => {
-    if (registration && registration.waiting) {
-      registration.waiting.postMessage({ type: "SKIP_WAITING" });
+    const reg = regRef.current;
+    if (reg?.waiting) {
+      // Tell the waiting SW to skip waiting and become active
+      reg.waiting.postMessage({ type: "SKIP_WAITING" });
     } else {
-      // Force reload if no waiting worker detected but user clicked update
+      // Fallback: hard reload
       window.location.reload();
     }
   };
@@ -104,7 +123,7 @@ export default function PWAUpdater() {
         </div>
         <div>
           <h4 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: "#f4f4f5", letterSpacing: "-0.01em" }}>
-            New System Update Available
+            New System Update Ready
           </h4>
           <span style={{ fontSize: 11, fontWeight: 600, color: "#8b5cf6", background: "rgba(139, 92, 246, 0.1)", padding: "2px 6px", borderRadius: 4, display: "inline-block", marginTop: 2 }}>
             Version 1.4.0
@@ -113,31 +132,35 @@ export default function PWAUpdater() {
       </div>
 
       <div style={{ margin: "10px 0 16px 0", borderTop: "1px solid rgba(255, 255, 255, 0.08)", paddingTop: 10 }}>
-        <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: "#e4e4e7" }}>What's new:</p>
-        
+        <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: "#e4e4e7" }}>What&apos;s new:</p>
+
         <div className="pwa-bullet">
           <span>💬</span>
-          <span><strong>AI Video Copilot Chat Assistant</strong> built directly into the analyzer page.</span>
+          <span><strong>AI Video Copilot Chat</strong> built into the Video AI analyzer page.</span>
         </div>
         <div className="pwa-bullet">
           <span>🔒</span>
-          <span><strong>Secure Credentials fallback</strong> using environment variables, removing local secret files.</span>
+          <span><strong>Secure Credentials</strong> — removed local JSON secrets, env var based.</span>
         </div>
         <div className="pwa-bullet">
           <span>🔄</span>
-          <span><strong>PWA Live Update Manager</strong> to receive instant new deployments.</span>
+          <span><strong>Live Update Manager</strong> — this banner, delivering instant PWA updates.</span>
+        </div>
+        <div className="pwa-bullet">
+          <span>🛡️</span>
+          <span><strong>Firestore Rules Hardened</strong> — fixed snapshot permission errors.</span>
         </div>
       </div>
 
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-        <button 
-          onClick={() => setShow(false)} 
-          style={{ 
-            background: "transparent", 
-            border: "none", 
-            color: "#a1a1aa", 
-            fontSize: 12.5, 
-            fontWeight: 600, 
+        <button
+          onClick={() => setShow(false)}
+          style={{
+            background: "transparent",
+            border: "none",
+            color: "#a1a1aa",
+            fontSize: 12.5,
+            fontWeight: 600,
             cursor: "pointer",
             padding: "8px 14px",
             borderRadius: 8,
@@ -148,16 +171,16 @@ export default function PWAUpdater() {
         >
           Later
         </button>
-        <button 
-          onClick={handleUpdate} 
-          style={{ 
-            background: "linear-gradient(135deg, #7c3aed, #2563eb)", 
-            border: "none", 
-            color: "#ffffff", 
-            fontSize: 12.5, 
-            fontWeight: 700, 
-            borderRadius: 8, 
-            padding: "8px 16px", 
+        <button
+          onClick={handleUpdate}
+          style={{
+            background: "linear-gradient(135deg, #7c3aed, #2563eb)",
+            border: "none",
+            color: "#ffffff",
+            fontSize: 12.5,
+            fontWeight: 700,
+            borderRadius: 8,
+            padding: "8px 16px",
             cursor: "pointer",
             boxShadow: "0 4px 12px rgba(124, 58, 237, 0.3)",
             transition: "all 0.2s"

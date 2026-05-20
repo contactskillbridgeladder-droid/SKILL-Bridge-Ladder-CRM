@@ -6,6 +6,12 @@ const withPWA = withPWAInit({
   disable: process.env.NODE_ENV === "development",
   register: true,
   sw: "sw.js",
+  reloadOnOnline: false,
+  workboxOptions: {
+    // When false: new SW waits until PWAUpdater posts { type: 'SKIP_WAITING' }
+    // The SW then auto-adds a message listener for SKIP_WAITING
+    skipWaiting: false,
+  },
 });
 
 const nextConfig: NextConfig = {
