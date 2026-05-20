@@ -1,96 +1,29 @@
 // SkillBridge CRM — Firebase Cloud Messaging Service Worker
 // Handles background push notifications for the installed PWA
 
-const CF_WORKER_URL = "https://skillbridge-crm-env.contact-skillbridgeladder.workers.dev";
-
-// Cache the config after first fetch
-let _config = null;
-
-async function getFirebaseConfig() {
-  if (_config) return _config;
-  try {
-    const res = await fetch(`${CF_WORKER_URL}/config`);
-    _config = await res.json();
-    return _config;
-  } catch (e) {
-    console.error("[SW] Failed to fetch Firebase config:", e);
-    return null;
-  }
-}
-
 // Import Firebase scripts
 importScripts("https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js");
 importScripts("https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js");
 
-// Self-initializing service worker — fetches config from CF Worker on activate
-self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    getFirebaseConfig().then((config) => {
-      if (!config || !config.apiKey) return;
-      try {
-        if (!firebase.apps.length) {
-          firebase.initializeApp({
-            apiKey: config.apiKey,
-            authDomain: config.authDomain,
-            projectId: config.projectId,
-            storageBucket: config.storageBucket,
-            messagingSenderId: config.messagingSenderId,
-            appId: config.appId,
-          });
-        }
-        console.log("[SW] Firebase initialized for project:", config.projectId);
-      } catch (e) {
-        console.error("[SW] Firebase init error:", e);
-      }
-    })
-  );
+// CRITICAL FOR ANDROID: Firebase MUST be initialized synchronously!
+// If this is delayed by a fetch request, Android kills the background worker before it registers the message handler.
+firebase.initializeApp({
+  apiKey: "AIzaSyAdcmMhLCUjeZIRlaRRZd8h9PywN6_Gu1Q",
+  authDomain: "auth.crm.skillbridgeladder.in",
+  projectId: "skillbridge-crm",
+  storageBucket: "skillbridge-crm.firebasestorage.app",
+  messagingSenderId: "141902383537",
+  appId: "1:141902383537:web:5269fd7bb248d2d02e5590"
 });
+
+const messaging = firebase.messaging();
 
 // ── Background FCM Message Handler ────────────────────────────────────────────
-// This fires when the app is NOT in the foreground
-self.addEventListener("message", (event) => {
-  if (event.data?.type === "FCM_BACKGROUND") {
-    const { title, body, icon, url } = event.data;
-    self.registration.showNotification(title || "SkillBridge CRM", {
-      body: body || "You have a new notification",
-      icon: icon || "/logo.png",
-      badge: "/logo.png",
-      data: { url: url || "/" },
-      tag: "skillbridge-notification",
-      renotify: true,
-      requireInteraction: false,
-      vibrate: [200, 100, 200],
-    });
-  }
-});
-
-// Lazy-initialize messaging after config is fetched
-getFirebaseConfig().then((config) => {
-  if (!config?.apiKey) return;
-  try {
-    if (!firebase.apps.length) {
-      firebase.initializeApp({
-        apiKey: config.apiKey,
-        authDomain: config.authDomain,
-        projectId: config.projectId,
-        storageBucket: config.storageBucket,
-        messagingSenderId: config.messagingSenderId,
-        appId: config.appId,
-      });
-    }
-
-    const messaging = firebase.messaging();
-
-    // ── Handle background FCM messages ──────────────────────────────────────
-    messaging.onBackgroundMessage((payload) => {
-      console.log("[SW] Background FCM message:", payload);
-      // We no longer manually call showNotification here because the backend 
-      // payload now includes the `webpush.notification` object with native `actions`.
-      // The browser will automatically display the notification and the Reply button.
-    });
-  } catch (e) {
-    console.error("[SW] Messaging setup error:", e);
-  }
+// This explicit handler is REQUIRED by Android to keep the background task alive.
+messaging.onBackgroundMessage((payload) => {
+  console.log("[SW] Background FCM message:", payload);
+  // We don't call showNotification here because the backend sends a native 
+  // webpush.notification block with actions, which the browser renders automatically.
 });
 
 // ── Notification Click Handler ────────────────────────────────────────────────
