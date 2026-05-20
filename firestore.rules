@@ -13,21 +13,19 @@ service cloud.firestore {
     match /users/{uid} {
       // Any authenticated user can read user docs (team management, assignment).
       allow read: if isSignedIn();
-      // Users can create/update their own doc only.
-      allow create, update: if isSignedIn() && request.auth.uid == uid;
+      // Users can create their own doc during auth, and Admins can update docs via the Team Management UI.
+      allow create, update: if isSignedIn();
       // Admins need to delete other users — admin check enforced in app code.
       allow delete: if isSignedIn();
 
-      // Notifications sub-collection — owner + any authenticated user can delete
+      // Notifications sub-collection
       match /notifications/{notifId} {
-        allow read, write: if isSignedIn() && request.auth.uid == uid;
-        allow delete: if isSignedIn();
+        allow read, write: if isSignedIn();
       }
 
-      // Sessions sub-collection — owner + any authenticated user can delete
+      // Sessions sub-collection (Admins need to write to terminate sessions)
       match /sessions/{sessionId} {
-        allow read, write: if isSignedIn() && request.auth.uid == uid;
-        allow delete: if isSignedIn();
+        allow read, write: if isSignedIn();
       }
     }
 
