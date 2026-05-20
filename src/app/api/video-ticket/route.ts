@@ -15,19 +15,8 @@ const FCM_URL = `https://fcm.googleapis.com/v1/projects/${PROJECT_ID}/messages:s
 const CF_WORKER = process.env.NEXT_PUBLIC_CF_WORKER_URL || "https://skillbridge-crm-env.contact-skillbridgeladder.workers.dev";
 
 async function getAccessToken(): Promise<string> {
-  const { getGoogleAuthCredentials } = await import("@/lib/firebase-admin");
-  const { GoogleAuth } = await import("google-auth-library");
-  const key = getGoogleAuthCredentials();
-  const auth = new GoogleAuth({
-    credentials: key,
-    scopes: [
-      "https://www.googleapis.com/auth/cloud-platform",
-      "https://www.googleapis.com/auth/firebase.messaging",
-    ],
-  });
-  const client = await auth.getClient();
-  const t = await client.getAccessToken();
-  return t.token!;
+  const { getAccessToken: _get } = await import("@/lib/firebase-admin");
+  return _get();
 }
 
 async function fsGet(token: string, docPath: string) {

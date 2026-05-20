@@ -9,21 +9,10 @@ const FIRESTORE_URL = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID
 const CF_WORKER = process.env.NEXT_PUBLIC_CF_WORKER_URL!;
 
 async function getAccessToken(): Promise<string> {
-  const { getGoogleAuthCredentials } = await import("@/lib/firebase-admin");
-  const { GoogleAuth } = await import("google-auth-library");
-  const key = getGoogleAuthCredentials();
-  if (!key) {
-    throw new Error(
-      "Firebase Admin credentials not configured. " +
-      "Set the FIREBASE_ADMIN_SDK_JSON environment variable in Vercel with your service account JSON."
-    );
-  }
-  const auth = new GoogleAuth({ credentials: key, scopes: ["https://www.googleapis.com/auth/cloud-platform"] });
-  const client = await auth.getClient();
-  const t = await client.getAccessToken();
-  if (!t.token) throw new Error("Failed to obtain Google access token.");
-  return t.token;
+  const { getAccessToken: _get } = await import("@/lib/firebase-admin");
+  return _get();
 }
+
 
 // Write Firestore notification document via REST (bypasses gRPC issues)
 async function writeFirestoreNotif(token: string, toUid: string, payload: Record<string, string>) {

@@ -1,59 +1,43 @@
-import * as adminApp from "firebase-admin/app";
-import * as adminAuth from "firebase-admin/auth";
-import * as adminFirestore from "firebase-admin/firestore";
-import { readFileSync, existsSync } from "fs";
-import path from "path";
+/**
+ * Minimal Firebase server credentials — NO JSON file required.
+ *
+ * Add these two environment variables in Vercel → Settings → Environment Variables:
+ *   FIREBASE_CLIENT_EMAIL   ← "client_email" field from your service account JSON
+ *   FIREBASE_PRIVATE_KEY    ← "private_key"  field (paste the full -----BEGIN...END----- block)
+ *
+ * That's it. No file upload, no full JSON needed.
+ */
 
-export function getGoogleAuthCredentials() {
-  const envKey = process.env.FIREBASE_ADMIN_SDK_JSON;
-  if (envKey) {
-    try {
-      if (envKey.trim().startsWith("{")) {
-        return JSON.parse(envKey);
-      } else {
-        return JSON.parse(Buffer.from(envKey, "base64").toString("utf-8"));
-      }
-    } catch (err: any) {
-      console.error("❌ Failed to parse FIREBASE_ADMIN_SDK_JSON environment variable:", err.message);
-      return null;
-    }
-  }
-
-  const jsonPath = path.resolve(process.cwd(), "skillbridge-crm-firebase-adminsdk-fbsvc-3d64026130.json");
-  if (existsSync(jsonPath)) {
-    try {
-      return JSON.parse(readFileSync(jsonPath, "utf-8"));
-    } catch (err: any) {
-      console.error("❌ Failed to parse local service account JSON file:", err.message);
-      return null;
-    }
-  }
-
-  return null;
+export function getMinimalCredentials() {
+  const client_email = process.env.FIREBASE_CLIENT_EMAIL;
+  const private_key  = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  if (!client_email || !private_key) return null;
+  return { client_email, private_key };
 }
 
-function getAdminApp() {
-  if (adminApp.getApps().length > 0) return adminApp.getApp();
-
-  const serviceAccount = getGoogleAuthCredentials();
-  if (!serviceAccount) {
+/** Returns a short-lived Google OAuth2 access token for Cloud APIs (Firestore REST, FCM). */
+export async function getAccessToken(): Promise<string> {
+  const creds = getMinimalCredentials();
+  if (!creds) {
     throw new Error(
-      "❌ Firebase Admin SDK could not be initialized: Missing credentials. " +
-      "Please set the 'FIREBASE_ADMIN_SDK_JSON' environment variable in Vercel " +
-      "with the contents of your service account JSON file."
+      "Firebase server credentials not configured. " +
+      "Go to Vercel → Settings → Environment Variables and add:\n" +
+      "  FIREBASE_CLIENT_EMAIL  (from your service account JSON)\n" +
+      "  FIREBASE_PRIVATE_KEY   (from your service account JSON)"
     );
   }
-
-  return adminApp.initializeApp({
-    credential: adminApp.cert(serviceAccount),
-    databaseURL: "https://skillbridge-crm-default-rtdb.firebaseio.com",
+  const { GoogleAuth } = await import("google-auth-library");
+  const auth = new GoogleAuth({
+    credentials: { client_email: creds.client_email, private_key: creds.private_key } as any,
+    scopes: ["https://www.googleapis.com/auth/cloud-platform"],
   });
+  const client = await auth.getClient();
+  const t = await client.getAccessToken();
+  if (!t.token) throw new Error("Failed to obtain Google access token.");
+  return t.token;
 }
 
-export function getAdminAuth() {
-  return adminAuth.getAuth(getAdminApp());
-}
-
-export function getAdminDb() {
-  return adminFirestore.getFirestore(getAdminApp());
-}
+// Legacy exports for any code that still imports these
+export function getGoogleAuthCredentials() { return getMinimalCredentials(); }
+export function getAdminAuth() { throw new Error("Use getAccessToken() instead."); }
+export function getAdminDb()   { throw new Error("Use getAccessToken() instead."); }

@@ -273,11 +273,12 @@ export default function MessagesPage() {
     return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' });
   };
 
-  // Filter contacts by search query
-  const filteredContacts = contacts.filter(c =>
-    c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.email.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredContacts = contacts.filter(c => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    return (c.name ?? "").toLowerCase().includes(q) ||
+           (c.email ?? "").toLowerCase().includes(q);
+  });
 
   if (loading || !currentUser) {
     return (

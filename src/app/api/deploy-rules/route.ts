@@ -8,20 +8,8 @@ import path from "path";
 // This deploys Firestore Security Rules via REST API using the service account
 export async function POST() {
   try {
-    const { getGoogleAuthCredentials } = await import("@/lib/firebase-admin");
-    const { GoogleAuth } = await import("google-auth-library");
-    const key = getGoogleAuthCredentials();
-
-    const auth = new GoogleAuth({
-      credentials: key,
-      scopes: [
-        "https://www.googleapis.com/auth/cloud-platform",
-        "https://www.googleapis.com/auth/firebase",
-      ],
-    });
-    const client = await auth.getClient();
-    const tokenRes = await client.getAccessToken();
-    const token = tokenRes.token!;
+    const { getAccessToken } = await import("@/lib/firebase-admin");
+    const token = await getAccessToken();
 
     const PROJECT_ID = "skillbridge-crm";
 
