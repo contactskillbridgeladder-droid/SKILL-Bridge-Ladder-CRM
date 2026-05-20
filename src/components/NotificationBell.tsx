@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { collection, query, orderBy, limit, onSnapshot, doc, updateDoc } from "firebase/firestore";
 import { initFirebase } from "@/lib/firebase";
 
@@ -10,6 +10,8 @@ export default function NotificationBell({ uid }: { uid: string }) {
   const [open, setOpen] = useState(false);
   const [dbRef, setDbRef] = useState<any>(null);
   const [activeToast, setActiveToast] = useState<Notif | null>(null);
+  const bellRef = useRef<HTMLButtonElement>(null);
+  const [dropPos, setDropPos] = useState<{ top: number; left: number } | null>(null);
 
   useEffect(() => {
     if (!uid) return;
@@ -80,10 +82,23 @@ export default function NotificationBell({ uid }: { uid: string }) {
     task_approved: "✅", task_rejected: "❌", new_video: "🎬"
   };
 
+  const togglePanel = () => {
+    if (!open && bellRef.current) {
+      const rect = bellRef.current.getBoundingClientRect();
+      // Position dropdown ABOVE the bell, anchored to its right edge
+      setDropPos({
+        top: rect.top - 8, // 8px gap above the bell
+        left: Math.min(rect.right, window.innerWidth - 16), // right-aligned, stay in viewport
+      });
+    }
+    setOpen(!open);
+  };
+
   return (
     <div style={{ position: "relative" }}>
       <button
-        onClick={() => setOpen(!open)}
+        ref={bellRef}
+        onClick={togglePanel}
         style={{ position: "relative", background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 9, width: 36, height: 36, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, transition: "all 0.15s" }}
       >
         🔔
@@ -94,16 +109,32 @@ export default function NotificationBell({ uid }: { uid: string }) {
         )}
       </button>
 
-      {open && (
+      {open && dropPos && (
         <>
-          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-          <div style={{ position: "absolute", bottom: 44, right: 0, width: 360, maxHeight: "80vh", background: "var(--bg-card)", border: "1px solid var(--border-bright)", borderRadius: 14, boxShadow: "0 -20px 60px rgba(0,0,0,0.6)", zIndex: 50, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-            <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 9990 }} />
+          <div style={{
+            position: "fixed",
+            bottom: `calc(100vh - ${dropPos.top}px)`,
+            right: `calc(100vw - ${dropPos.left}px)`,
+            width: 370,
+            maxWidth: "calc(100vw - 24px)",
+            maxHeight: "min(500px, 70vh)",
+            background: "var(--bg-card)",
+            border: "1px solid var(--border-bright)",
+            borderRadius: 14,
+            boxShadow: "0 -12px 48px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04)",
+            zIndex: 9999,
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+            animation: "notif-pop-up 0.2s ease-out"
+          }}>
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
               <div style={{ fontWeight: 700, fontSize: 14 }}>Notifications {unread > 0 && <span style={{ background: "rgba(124,58,237,0.2)", color: "#a78bfa", borderRadius: 99, padding: "1px 8px", fontSize: 12, marginLeft: 6 }}>{unread} new</span>}</div>
               {unread > 0 && <button onClick={markAllRead} style={{ background: "none", border: "none", color: "var(--accent-light)", fontSize: 12, cursor: "pointer", fontWeight: 500 }}>Mark all read</button>}
             </div>
 
-            <div style={{ maxHeight: 420, overflowY: "auto" }}>
+            <div style={{ flex: 1, overflowY: "auto" }}>
               {notifs.length === 0 ? (
                 <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)", fontSize: 14 }}>
                   <div style={{ fontSize: 32, marginBottom: 8 }}>🔔</div>
@@ -182,14 +213,12 @@ export default function NotificationBell({ uid }: { uid: string }) {
 
       <style>{`
         @keyframes slideInRight {
-          from {
-            transform: translateX(120%);
-            opacity: 0;
-          }
-          to {
-            transform: translateX(0);
-            opacity: 1;
-          }
+          from { transform: translateX(120%); opacity: 0; }
+          to   { transform: translateX(0);    opacity: 1; }
+        }
+        @keyframes notif-pop-up {
+          from { transform: translateY(10px); opacity: 0; }
+          to   { transform: translateY(0);    opacity: 1; }
         }
       `}</style>
     </div>

@@ -5,6 +5,7 @@ export default function PWAUpdater() {
   const [show, setShow] = useState(false);
   const [updating, setUpdating] = useState(false);
   const regRef = useRef<ServiceWorkerRegistration | null>(null);
+  const dismissed = useRef(false);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
@@ -18,24 +19,29 @@ export default function PWAUpdater() {
     navigator.serviceWorker.ready.then((reg) => {
       regRef.current = reg;
 
-      // Show banner if a new SW is already waiting
-      if (reg.waiting) setShow(true);
+      // If a SW is already waiting, activate it silently on first load
+      // (don't show a banner — the user just arrived, apply the update)
+      if (reg.waiting) {
+        reg.waiting.postMessage({ type: "SKIP_WAITING" });
+        return;
+      }
 
-      // Watch for new SW installing
+      // Watch for new SW installing (this fires during the user's session)
       reg.addEventListener("updatefound", () => {
         const sw = reg.installing;
         if (!sw) return;
         sw.addEventListener("statechange", () => {
           if (sw.state === "installed" && navigator.serviceWorker.controller) {
             regRef.current = reg;
-            setShow(true);
+            // Only show banner if not already dismissed this session
+            if (!dismissed.current) setShow(true);
           }
         });
       });
 
-      // Check for update immediately, then every 30s
+      // Check for update once on load, then every 5 minutes (not 30s!)
       reg.update().catch(() => {});
-      const id = setInterval(() => reg.update().catch(() => {}), 30_000);
+      const id = setInterval(() => reg.update().catch(() => {}), 5 * 60_000);
       return () => clearInterval(id);
     });
   }, []);
@@ -64,6 +70,16 @@ export default function PWAUpdater() {
     }
   };
 
+  const handleDismiss = () => {
+    dismissed.current = true;
+    setShow(false);
+    // Silently apply the update in background — next navigation will use it
+    const reg = regRef.current;
+    if (reg?.waiting) {
+      reg.waiting.postMessage({ type: "SKIP_WAITING" });
+    }
+  };
+
   if (!show) return null;
 
   return (
@@ -82,7 +98,6 @@ export default function PWAUpdater() {
           from { transform: translateY(30px); opacity: 0; }
           to   { transform: translateY(0);    opacity: 1; }
         }
-        .pwa-b { display:flex; gap:8px; font-size:12px; color:#a1a1aa; margin-top:6px; line-height:1.4; }
       `}} />
 
       <div style={{ display:"flex", gap:12, alignItems:"center", marginBottom:12 }}>
@@ -92,26 +107,16 @@ export default function PWAUpdater() {
           fontSize:18, boxShadow:"0 4px 12px rgba(124,58,237,0.3)" }}>⚡</div>
         <div>
           <h4 style={{ margin:0, fontSize:14, fontWeight:800, color:"#f4f4f5" }}>
-            New Update Ready
+            New Update Available
           </h4>
-          <span style={{ fontSize:11, fontWeight:600, color:"#8b5cf6",
-            background:"rgba(139,92,246,0.1)", padding:"2px 6px",
-            borderRadius:4, display:"inline-block", marginTop:2 }}>
-            v1.4.0
+          <span style={{ fontSize:12, color:"#a1a1aa", marginTop:2, display:"block" }}>
+            Refresh to apply the latest changes
           </span>
         </div>
       </div>
 
-      <div style={{ margin:"10px 0 16px", borderTop:"1px solid rgba(255,255,255,0.08)", paddingTop:10 }}>
-        <p style={{ margin:0, fontSize:12, fontWeight:600, color:"#e4e4e7" }}>What&apos;s new:</p>
-        <div className="pwa-b"><span>🔒</span><span>Firestore rules hardened — no more snapshot errors</span></div>
-        <div className="pwa-b"><span>⚡</span><span>Fixed all firebase import errors across layouts</span></div>
-        <div className="pwa-b"><span>🔄</span><span>Session history tracking (non-blocking)</span></div>
-        <div className="pwa-b"><span>💬</span><span>AI Video Copilot chat assistant</span></div>
-      </div>
-
-      <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-        <button onClick={() => setShow(false)}
+      <div style={{ display:"flex", gap:10, justifyContent:"flex-end", paddingTop: 8 }}>
+        <button onClick={handleDismiss}
           disabled={updating}
           style={{ background:"transparent", border:"none", color:"#a1a1aa",
             fontSize:12.5, fontWeight:600, cursor:"pointer",

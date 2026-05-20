@@ -129,8 +129,39 @@ export async function POST(req: Request) {
       recursiveFind(shortsJson, shortsList, "short");
     }
 
+    // ── Better Shorts vs Long segregation ──────────────────────────────
+    // YouTube's /videos page may include Shorts. Filter them by duration.
+    function parseDurationSeconds(d: string): number {
+      if (!d) return 999; // unknown = treat as long
+      const parts = d.split(":").map(Number);
+      if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+      if (parts.length === 2) return parts[0] * 60 + parts[1];
+      return Number(parts[0]) || 999;
+    }
+
+    // Move videos ≤60s from long list to shorts list
+    const longFiltered: any[] = [];
+    for (const v of videosList) {
+      const secs = parseDurationSeconds(v.duration);
+      if (secs <= 60) {
+        if (!shortsList.some(s => s.videoId === v.videoId)) {
+          shortsList.push({ ...v, type: "short" });
+        }
+      } else {
+        longFiltered.push(v);
+      }
+    }
+
+    // Deduplicate shorts (might appear on both pages)
+    const seenShorts = new Set<string>();
+    const uniqueShorts = shortsList.filter(s => {
+      if (seenShorts.has(s.videoId)) return false;
+      seenShorts.add(s.videoId);
+      return true;
+    });
+
     // RSS fallback if videos list is empty
-    if (videosList.length === 0) {
+    if (longFiltered.length === 0 && uniqueShorts.length === 0) {
       const channelIdMatch = mainHtml.match(/itemprop="channelId"\s+content="([^"]+)"/) || 
                              mainHtml.match(/channel_id=([^"&]+)/) ||
                              mainHtml.match(/"channelId":"([^"]+)"/);
@@ -151,9 +182,9 @@ export async function POST(req: Request) {
           
           if (videoId && title) {
             if (isShort) {
-              shortsList.push({ videoId, title, thumbnail, duration: "", type: "short" });
+              uniqueShorts.push({ videoId, title, thumbnail, duration: "", type: "short" });
             } else {
-              videosList.push({ videoId, title, thumbnail, duration: "", type: "long" });
+              longFiltered.push({ videoId, title, thumbnail, duration: "", type: "long" });
             }
           }
         }
@@ -169,8 +200,8 @@ export async function POST(req: Request) {
         avatarUrl,
         subscriberCount
       },
-      videos: videosList,
-      shorts: shortsList
+      videos: longFiltered,
+      shorts: uniqueShorts
     });
 
   } catch (error: any) {

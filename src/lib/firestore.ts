@@ -19,6 +19,7 @@ export type TaskType = "Main Edit" | "Shorts";
 
 export interface Task {
   id?: string;
+  taskNumber?: string;  // e.g. "SBL-001", "SBL-002"
   title: string;
   channel: string;
   channelId: string;
@@ -58,9 +59,25 @@ export async function getTasksByHeadEditor(headUid: string): Promise<Task[]> {
   return snap.docs.map(d => ({ id: d.id, ...d.data() } as Task));
 }
 
+/** Generate next task number like SBL-001, SBL-002, etc. */
+async function getNextTaskNumber(): Promise<string> {
+  const db = await getDb();
+  const snap = await getDocs(query(collection(db, "tasks"), orderBy("createdAt", "desc")));
+  let maxNum = 0;
+  snap.docs.forEach(d => {
+    const tn = d.data().taskNumber as string;
+    if (tn) {
+      const n = parseInt(tn.replace("SBL-", ""), 10);
+      if (!isNaN(n) && n > maxNum) maxNum = n;
+    }
+  });
+  return `SBL-${String(maxNum + 1).padStart(3, "0")}`;
+}
+
 export async function createTask(data: Omit<Task, "id">): Promise<string> {
   const db = await getDb();
-  const ref = await addDoc(collection(db, "tasks"), { ...data, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  const taskNumber = await getNextTaskNumber();
+  const ref = await addDoc(collection(db, "tasks"), { ...data, taskNumber, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
   return ref.id;
 }
 
