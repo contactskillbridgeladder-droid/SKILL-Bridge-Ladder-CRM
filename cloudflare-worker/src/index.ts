@@ -8,6 +8,8 @@ export interface Env {
   FIREBASE_APP_ID: string;
   FIREBASE_MEASUREMENT_ID: string;
   FIREBASE_VAPID_KEY: string;
+  FIREBASE_CLIENT_EMAIL: string;
+  FIREBASE_PRIVATE_KEY: string;
   RESEND_API_KEY: string;
   GEMINI_API_KEY: string;
 }
@@ -75,7 +77,11 @@ export default {
         });
       }
 
-      return new Response(JSON.stringify({ geminiApiKey: env.GEMINI_API_KEY }), {
+      return new Response(JSON.stringify({
+        geminiApiKey: env.GEMINI_API_KEY,
+        firebaseClientEmail: env.FIREBASE_CLIENT_EMAIL,
+        firebasePrivateKey: env.FIREBASE_PRIVATE_KEY,
+      }), {
         headers: { "Content-Type": "application/json", ...corsHeaders }
       });
     }
