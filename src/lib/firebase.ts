@@ -17,6 +17,7 @@ let analytics: Analytics | undefined;
 let messaging: Messaging | undefined;
 
 let initializationPromise: Promise<any> | null = null;
+let cachedConfig: any = null;
 
 export async function initFirebase() {
   if (initializationPromise) return initializationPromise;
@@ -27,6 +28,7 @@ export async function initFirebase() {
       if (!res.ok) throw new Error("Failed to fetch config from worker");
 
       const config = await res.json();
+      cachedConfig = config;
 
       const { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } = await import("firebase/firestore");
 
@@ -75,9 +77,12 @@ export async function getFCMToken(): Promise<string | null> {
     const { messaging: msg } = await initFirebase();
     if (!msg) return null;
 
-    // Fetch VAPID key from worker config
-    const res = await fetch(`${WORKER_URL}/config`);
-    const config = await res.json();
+    let config = cachedConfig;
+    if (!config) {
+      const res = await fetch(`${WORKER_URL}/config`);
+      config = await res.json();
+      cachedConfig = config;
+    }
     const vapidKey = config.vapidKey;
     if (!vapidKey) return null;
 
@@ -91,4 +96,5 @@ export async function getFCMToken(): Promise<string | null> {
     return null;
   }
 }
+
 
