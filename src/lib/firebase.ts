@@ -50,14 +50,12 @@ export async function initFirebase() {
       if (typeof window !== "undefined") {
         const supported = await isSupported();
         if (supported) analytics = getAnalytics(app);
-
-        // Init FCM messaging if supported
-        try {
-          messaging = getMessaging(app);
-        } catch { /* unsupported browser */ }
+        // NOTE: Messaging is initialized lazily in getFCMToken() to avoid
+        // IndexedDB "connection is closing" errors during PWA updates.
+        // Do NOT call getMessaging(app) here.
       }
 
-      return { app, auth, db, rtdb, analytics, messaging };
+      return { app, auth, db, rtdb, analytics, messaging: undefined };
     } catch (error) {
       initializationPromise = null;
       console.error("Failed to initialize Firebase:", error);
@@ -70,12 +68,22 @@ export async function initFirebase() {
 
 /**
  * Requests FCM push token. Call after Notification.requestPermission() === 'granted'.
- * Uses the VAPID key from the Worker config.
+ * Lazily initializes Firebase Messaging to avoid IDB race conditions during startup.
  */
 export async function getFCMToken(): Promise<string | null> {
   try {
-    const { messaging: msg } = await initFirebase();
-    if (!msg) return null;
+    await initFirebase();
+    if (!app) return null;
+
+    // Lazy-init messaging only when actually needed
+    if (!messaging) {
+      try {
+        messaging = getMessaging(app);
+      } catch {
+        console.warn("[FCM] Messaging not supported in this browser.");
+        return null;
+      }
+    }
 
     let config = cachedConfig;
     if (!config) {
@@ -86,7 +94,7 @@ export async function getFCMToken(): Promise<string | null> {
     const vapidKey = config.vapidKey;
     if (!vapidKey) return null;
 
-    const token = await getToken(msg, {
+    const token = await getToken(messaging, {
       vapidKey,
       serviceWorkerRegistration: await navigator.serviceWorker.getRegistration("/"),
     });
@@ -96,5 +104,3 @@ export async function getFCMToken(): Promise<string | null> {
     return null;
   }
 }
-
-
