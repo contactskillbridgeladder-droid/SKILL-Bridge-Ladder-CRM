@@ -44,11 +44,9 @@ async function sendFCMPush(token: string, fcmToken: string, payload: { title: st
     body: JSON.stringify({
       message: {
         token: fcmToken,
-        // Data-only message forces the Service Worker to handle the display
-        // This ensures custom actions (like Reply) are attached on Android
+        // The notification block is REQUIRED for Android Chrome to wake up
+        notification: { title: payload.title, body: payload.body },
         data: { 
-          title: payload.title,
-          body: payload.body,
           url: payload.url || "https://crm.skillbridgeladder.in",
           type: payload.type || "general",
           chatId: payload.chatId || "",
@@ -60,7 +58,27 @@ async function sendFCMPush(token: string, fcmToken: string, payload: { title: st
         webpush: {
           headers: {
             Urgency: "high"
-          }
+          },
+          notification: {
+            title: payload.title,
+            body: payload.body,
+            icon: "/logo.png",
+            badge: "/logo.png",
+            requireInteraction: false,
+            vibrate: [200, 100, 200],
+            tag: payload.type === "chat_message" ? `chat-${payload.chatId}` : "skillbridge-notification",
+            data: { url: payload.url || "https://crm.skillbridgeladder.in", chatId: payload.chatId, type: payload.type, recipientId: payload.recipientId },
+            // Pass actions directly in the WebPush payload!
+            actions: payload.type === "chat_message" ? [
+              { action: "reply", title: "Reply", type: "text" },
+              { action: "open", title: "Open CRM" },
+              { action: "dismiss", title: "Dismiss" }
+            ] : [
+              { action: "open", title: "Open CRM" },
+              { action: "dismiss", title: "Dismiss" }
+            ]
+          },
+          fcm_options: { link: payload.url || "https://crm.skillbridgeladder.in" }
         },
       },
     }),

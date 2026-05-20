@@ -84,39 +84,9 @@ getFirebaseConfig().then((config) => {
     // ── Handle background FCM messages ──────────────────────────────────────
     messaging.onBackgroundMessage((payload) => {
       console.log("[SW] Background FCM message:", payload);
-
-      const notification = payload.notification || {};
-      const data = payload.data || {};
-      const clickUrl = data.url || notification.click_action || "/";
-      const isChat = data.type === "chat_message";
-      const title = data.title || notification.title || "SkillBridge CRM";
-      const body = data.body || notification.body || "You have a new notification";
-
-      const actions = [
-        { action: "open", title: "Open CRM" },
-        { action: "dismiss", title: "Dismiss" },
-      ];
-
-      // Add reply action for chat messages
-      if (isChat) {
-        actions.unshift({ 
-          action: "reply", 
-          title: "Reply",
-          type: "text" // Requires user input
-        } as any);
-      }
-
-      self.registration.showNotification(title, {
-        body: body,
-        icon: "/logo.png",
-        badge: "/logo.png",
-        data: { url: clickUrl, chatId: data.chatId, type: data.type, recipientId: data.recipientId },
-        tag: data.tag || (isChat ? `chat-${data.chatId}` : "skillbridge-notification"),
-        renotify: true,
-        requireInteraction: false,
-        vibrate: [200, 100, 200],
-        actions,
-      });
+      // We no longer manually call showNotification here because the backend 
+      // payload now includes the `webpush.notification` object with native `actions`.
+      // The browser will automatically display the notification and the Reply button.
     });
   } catch (e) {
     console.error("[SW] Messaging setup error:", e);
