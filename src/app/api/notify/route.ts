@@ -59,25 +59,6 @@ async function sendFCMPush(token: string, fcmToken: string, payload: { title: st
           headers: {
             Urgency: "high"
           },
-          notification: {
-            title: payload.title,
-            body: payload.body,
-            icon: "/logo.png",
-            badge: "/logo.png",
-            requireInteraction: false,
-            vibrate: [200, 100, 200],
-            tag: payload.type === "chat_message" ? `chat-${payload.chatId}` : "skillbridge-notification",
-            data: { url: payload.url || "https://crm.skillbridgeladder.in", chatId: payload.chatId, type: payload.type, recipientId: payload.recipientId },
-            // Pass actions directly in the WebPush payload!
-            actions: payload.type === "chat_message" ? [
-              { action: "reply", title: "Reply", type: "text" },
-              { action: "open", title: "Open CRM" },
-              { action: "dismiss", title: "Dismiss" }
-            ] : [
-              { action: "open", title: "Open CRM" },
-              { action: "dismiss", title: "Dismiss" }
-            ]
-          },
           fcm_options: { link: payload.url || "https://crm.skillbridgeladder.in" }
         },
       },

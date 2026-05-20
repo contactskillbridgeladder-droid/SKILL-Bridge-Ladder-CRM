@@ -20,10 +20,41 @@ const messaging = firebase.messaging();
 
 // ── Background FCM Message Handler ────────────────────────────────────────────
 // This explicit handler is REQUIRED by Android to keep the background task alive.
+// It MUST return a promise (via showNotification) so Android knows the task completed.
 messaging.onBackgroundMessage((payload) => {
   console.log("[SW] Background FCM message:", payload);
-  // We don't call showNotification here because the backend sends a native 
-  // webpush.notification block with actions, which the browser renders automatically.
+
+  const notification = payload.notification || {};
+  const data = payload.data || {};
+  const isChat = data.type === "chat_message";
+  const title = notification.title || data.title || "SkillBridge CRM";
+  const body = notification.body || data.body || "You have a new notification";
+  const clickUrl = data.url || notification.click_action || "/";
+
+  const actions = [
+    { action: "open", title: "Open CRM" },
+    { action: "dismiss", title: "Dismiss" },
+  ];
+
+  if (isChat) {
+    actions.unshift({ 
+      action: "reply", 
+      title: "Reply",
+      type: "text"
+    } as any);
+  }
+
+  return self.registration.showNotification(title, {
+    body: body,
+    icon: "/logo.png",
+    badge: "/logo.png",
+    data: { url: clickUrl, chatId: data.chatId, type: data.type, recipientId: data.recipientId },
+    tag: data.tag || (isChat ? `chat-${data.chatId}` : "skillbridge-notification"),
+    renotify: true,
+    requireInteraction: false,
+    vibrate: [200, 100, 200],
+    actions,
+  });
 });
 
 // ── Notification Click Handler ────────────────────────────────────────────────
