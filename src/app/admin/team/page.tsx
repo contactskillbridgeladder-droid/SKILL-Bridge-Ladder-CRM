@@ -28,7 +28,8 @@ export default function AdminTeam() {
     email: "",
     role: "editor" as "admin" | "head_editor" | "editor",
     sourced_by: "",
-    whatsappNumber: ""
+    whatsappNumber: "",
+    isBanned: false
   });
   const [saving, setSaving] = useState(false);
 
@@ -92,7 +93,8 @@ export default function AdminTeam() {
       email: user.email || "",
       role: user.role || "editor",
       sourced_by: user.sourced_by || "",
-      whatsappNumber: user.whatsappNumber || ""
+      whatsappNumber: user.whatsappNumber || "",
+      isBanned: user.isBanned === true
     });
   };
 
@@ -102,32 +104,85 @@ export default function AdminTeam() {
     setSaving(true);
 
     try {
+      const { db } = await initFirebase();
       const updateData: Partial<UserProfile> = {
         name: editForm.name,
         email: editForm.email,
         role: editForm.role,
         whatsappNumber: editForm.whatsappNumber,
-        sourced_by: editForm.role === "editor" ? editForm.sourced_by : ""
+        sourced_by: editForm.role === "editor" ? editForm.sourced_by : "",
+        isBanned: editForm.isBanned
       };
 
       await updateUserProfile(selectedUser.uid, updateData);
 
+      if (editForm.isBanned) {
+        // Terminate all user's sessions immediately
+        const { collection, getDocs, writeBatch } = await import("firebase/firestore");
+        const sessSnap = await getDocs(collection(db, "users", selectedUser.uid, "sessions"));
+        const batch = writeBatch(db);
+        sessSnap.forEach((sessDoc) => {
+          batch.update(sessDoc.ref, { status: "terminated" });
+        });
+        await batch.commit();
+      }
+
       // Log activity
       if (currentUser) {
         await logActivity(
-          "Update Team Member",
-          `Updated user ${selectedUser.email} (Role: ${editForm.role}, Name: ${editForm.name})`,
+          editForm.isBanned ? "Ban Team Member" : "Update Team Member",
+          editForm.isBanned
+            ? `Banned user ${selectedUser.email} and terminated all active sessions.`
+            : `Updated user ${selectedUser.email} (Role: ${editForm.role}, Name: ${editForm.name})`,
           currentUser
         );
       }
 
-      showToast("✅ Member profile updated successfully!");
+      showToast(editForm.isBanned ? "🚫 Member banned and sessions terminated!" : "✅ Member profile updated successfully!");
       // Reload users list
       const updatedList = await getUsers();
       setUsers(updatedList);
       setSelectedUser(null);
     } catch (err: any) {
       showToast("❌ Update failed: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteMember = async () => {
+    if (!selectedUser) return;
+    if (!confirm(`Are you sure you want to permanently delete ${editForm.email}? This action cannot be undone.`)) return;
+    setSaving(true);
+    try {
+      const { db } = await initFirebase();
+      const { deleteDoc, doc, collection, getDocs, writeBatch } = await import("firebase/firestore");
+      
+      // Delete their session docs
+      const sessSnap = await getDocs(collection(db, "users", selectedUser.uid, "sessions"));
+      const batch = writeBatch(db);
+      sessSnap.forEach((sessDoc) => {
+        batch.delete(sessDoc.ref);
+      });
+      await batch.commit();
+
+      // Delete their user profile doc
+      await deleteDoc(doc(db, "users", selectedUser.uid));
+
+      if (currentUser) {
+        await logActivity(
+          "Delete Team Member",
+          `Deleted user profile ${editForm.email}`,
+          currentUser
+        );
+      }
+
+      showToast("✅ Member profile deleted successfully!");
+      const updatedList = await getUsers();
+      setUsers(updatedList);
+      setSelectedUser(null);
+    } catch (err: any) {
+      showToast("❌ Delete failed: " + err.message);
     } finally {
       setSaving(false);
     }
@@ -247,11 +302,29 @@ export default function AdminTeam() {
                 </div>
               )}
 
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 12 }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setSelectedUser(null)}>Cancel</button>
-                <button type="submit" className="btn btn-primary" disabled={saving}>
-                  {saving ? "Saving Changes..." : "Save Profile"}
+              <div className="form-group" style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+                <input
+                  type="checkbox"
+                  id="banCheckbox"
+                  checked={editForm.isBanned}
+                  onChange={e => setEditForm(f => ({ ...f, isBanned: e.target.checked }))}
+                  style={{ width: 18, height: 18, accentColor: "var(--red)" }}
+                />
+                <label htmlFor="banCheckbox" style={{ fontWeight: 600, color: "var(--red)", cursor: "pointer" }}>
+                  Ban User (Revoke Access & Sign Out of All Devices)
+                </label>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+                <button type="button" className="btn btn-secondary" onClick={handleDeleteMember} style={{ color: "var(--red)", borderColor: "rgba(239,68,68,0.2)" }} disabled={saving}>
+                  Delete User
                 </button>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <button type="button" className="btn btn-secondary" onClick={() => setSelectedUser(null)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary" disabled={saving}>
+                    {saving ? "Saving Changes..." : "Save Profile"}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

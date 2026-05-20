@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import { initFirebase } from "@/lib/firebase";
-import { onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 
 export default function EditorLayout({ children }: { children: React.ReactNode }) {
@@ -24,6 +24,45 @@ export default function EditorLayout({ children }: { children: React.ReactNode }
         }
         getDoc(doc(db, "users", u.uid)).then((snap: any) => {
           const d = snap.data();
+          if (d?.isBanned === true) {
+            signOut(auth).then(() => {
+              router.push("/login?error=banned");
+            });
+            return;
+          }
+
+          // Verify session
+          const sessionId = localStorage.getItem("currentSessionId");
+          if (!sessionId) {
+            const newSessId = "sess_" + Math.random().toString(36).substring(2, 12);
+            localStorage.setItem("currentSessionId", newSessId);
+            const { setDoc } = require("firebase/firestore");
+            setDoc(doc(db, "users", u.uid, "sessions", newSessId), {
+              id: newSessId,
+              userAgent: navigator.userAgent,
+              loginTime: new Date(),
+              lastActive: new Date(),
+              status: "active"
+            }).catch(console.error);
+          } else {
+            getDoc(doc(db, "users", u.uid, "sessions", sessionId)).then((sessSnap: any) => {
+              if (!sessSnap.exists() || sessSnap.data().status !== "active") {
+                signOut(auth).then(() => {
+                  router.push("/login?error=session_terminated");
+                });
+              } else {
+                const { updateDoc } = require("firebase/firestore");
+                updateDoc(doc(db, "users", u.uid, "sessions", sessionId), {
+                  lastActive: new Date()
+                }).catch(console.error);
+              }
+            }).catch(() => {
+              signOut(auth).then(() => {
+                router.push("/login?error=session_terminated");
+              });
+            });
+          }
+
           setUser({ name: d?.name || u.email || "", role: d?.role || "editor", uid: u.uid });
         });
       });

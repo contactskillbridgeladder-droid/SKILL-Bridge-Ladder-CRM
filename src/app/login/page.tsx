@@ -36,12 +36,26 @@ function LoginForm() {
 
   // 1. Keep logged in check (redirect automatically on mount/reload if already verified)
   useEffect(() => {
+    const errorParam = searchParams.get("error");
+    if (errorParam === "banned") {
+      setError("This account has been banned. Access denied.");
+    } else if (errorParam === "session_terminated") {
+      setError("Your login session was terminated or opened on another device.");
+    }
+
     let unsub: (() => void) | undefined;
     initFirebase().then(({ auth, db }) => {
       unsub = onAuthStateChanged(auth, (u) => {
         if (u) {
           getDoc(doc(db, "users", u.uid)).then((snap: any) => {
             const userData = snap.exists() ? snap.data() : {};
+            if (userData.isBanned === true) {
+              signOut(auth).then(() => {
+                setError("This account has been banned. Access denied.");
+                setCheckingAuth(false);
+              });
+              return;
+            }
             const isVerified = userData.isEmailVerified === true;
             if (isVerified) {
               const role = userData.role || "editor";
@@ -63,7 +77,7 @@ function LoginForm() {
       setCheckingAuth(false);
     });
     return () => unsub?.();
-  }, [router]);
+  }, [router, searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -163,6 +177,14 @@ function LoginForm() {
         // Fetch Firestore profile to verify custom email status
         const snap = await getDoc(doc(db, "users", cred.user.uid));
         const userData = snap.exists() ? snap.data() : {};
+
+        if (userData.isBanned === true) {
+          await signOut(auth);
+          setError("This account has been banned. Access denied.");
+          setLoading(false);
+          return;
+        }
+
         const isVerified = userData.isEmailVerified === true;
         
         if (!isVerified) {

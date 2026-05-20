@@ -37,10 +37,21 @@ export default function VersionPage() {
 
   const releases: VersionRelease[] = [
     {
+      version: "v1.4.0",
+      tag: "AI Video Copilot & PWA Live Update Manager",
+      date: "May 20, 2026",
+      status: "latest",
+      changes: [
+        "Integrated AI Video Copilot Chat Assistant for interactive video script ideas, hook brainstorming, and task brief formulations.",
+        "Created PWA Live Update Manager to detect updates in real-time and safely notify users to reload to apply new versions.",
+        "Refactored Firebase Admin SDK initialization to remove local credential JSON dependencies and fallback to secure Vercel environment variables."
+      ]
+    },
+    {
       version: "v1.3.0",
       tag: "Custom OTP Verification & Stateless Mailer",
       date: "May 20, 2026",
-      status: "latest",
+      status: "stable",
       changes: [
         "Replaced client-side Firebase sendEmailVerification (which failed with 400 bad request) with custom 6-digit OTP verification.",
         "Removed Firebase Admin SDK JSON dependency from send-verification route to resolve server-side 500 errors on Vercel.",

@@ -78,6 +78,7 @@ export interface UserProfile {
   sourced_by?: string;
   whatsappNumber?: string;
   createdAt?: any;
+  isBanned?: boolean;
 }
 
 export async function getUsers(): Promise<UserProfile[]> {
@@ -110,6 +111,8 @@ export interface Channel {
   type: string;
   active: boolean;
   youtubeUrl?: string;
+  avatarUrl?: string;
+  subscriberCount?: string;
   createdAt?: any;
 }
 

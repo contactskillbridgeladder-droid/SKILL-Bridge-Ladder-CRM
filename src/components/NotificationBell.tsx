@@ -9,14 +9,52 @@ export default function NotificationBell({ uid }: { uid: string }) {
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [open, setOpen] = useState(false);
   const [dbRef, setDbRef] = useState<any>(null);
+  const [activeToast, setActiveToast] = useState<Notif | null>(null);
 
   useEffect(() => {
     if (!uid) return;
+    let isFirstLoad = true;
     initFirebase().then(({ db }) => {
       setDbRef(db);
       const q = query(collection(db, "users", uid, "notifications"), orderBy("createdAt", "desc"), limit(20));
       const unsub = onSnapshot(q, snap => {
-        setNotifs(snap.docs.map(d => ({ id: d.id, ...d.data() } as Notif)));
+        const newNotifs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Notif));
+        setNotifs(newNotifs);
+
+        if (!isFirstLoad) {
+          // Check for any newly added unread notification
+          snap.docChanges().forEach(change => {
+            if (change.type === "added") {
+              const n = { id: change.doc.id, ...change.doc.data() } as Notif;
+              if (!n.read) {
+                // Play notification sound
+                const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-500.wav");
+                audio.volume = 0.4;
+                audio.play().catch(() => {});
+
+                // Try browser push desktop notification
+                if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+                  try {
+                    new Notification(n.title, {
+                      body: n.message,
+                      icon: "/logo.png"
+                    });
+                  } catch (e) {
+                    console.error("Failed to trigger desktop notification:", e);
+                  }
+                }
+
+                // In-app visual toast
+                setActiveToast(n);
+                // Dismiss in-app toast after 6 seconds
+                setTimeout(() => {
+                  setActiveToast(prev => prev?.id === n.id ? null : prev);
+                }, 6000);
+              }
+            }
+          });
+        }
+        isFirstLoad = false;
       });
       return unsub;
     });
@@ -37,8 +75,9 @@ export default function NotificationBell({ uid }: { uid: string }) {
     await Promise.all(unreadOnes.map(n => updateDoc(doc(dbRef, "users", uid, "notifications", n.id), { read: true })));
   };
 
-  const typeIcon: Record<string,string> = {
+  const typeIcon: Record<string, string> = {
     task_assigned: "📋", review_feedback: "💬", payment_released: "💰", general: "🔔",
+    task_approved: "✅", task_rejected: "❌", new_video: "🎬"
   };
 
   return (
@@ -86,6 +125,73 @@ export default function NotificationBell({ uid }: { uid: string }) {
           </div>
         </>
       )}
+
+      {/* In-app glassmorphic Toast notification */}
+      {activeToast && (
+        <div
+          onClick={() => {
+            markRead(activeToast);
+            setActiveToast(null);
+          }}
+          style={{
+            position: "fixed",
+            bottom: 24,
+            right: 24,
+            width: 320,
+            background: "rgba(30, 30, 40, 0.75)",
+            backdropFilter: "blur(16px) saturate(180%)",
+            border: "1px solid var(--border-bright)",
+            borderRadius: 14,
+            padding: "16px 20px",
+            boxShadow: "0 20px 50px rgba(0,0,0,0.5)",
+            zIndex: 99999,
+            cursor: "pointer",
+            display: "flex",
+            gap: 12,
+            alignItems: "flex-start",
+            animation: "slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards",
+            color: "var(--text)"
+          }}
+        >
+          <div style={{ fontSize: 24, flexShrink: 0, marginTop: 2 }}>
+            {typeIcon[activeToast.type] || "🔔"}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 13.5, color: "var(--text)" }}>{activeToast.title}</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4, lineHeight: 1.4 }}>{activeToast.message}</div>
+          </div>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setActiveToast(null);
+            }}
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--text-muted)",
+              fontSize: 14,
+              cursor: "pointer",
+              padding: 0,
+              marginLeft: 4
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes slideInRight {
+          from {
+            transform: translateX(120%);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+      `}</style>
     </div>
   );
 }

@@ -2,7 +2,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { initFirebase } from "@/lib/firebase";
-import { onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 
 export default function Home() {
@@ -14,11 +14,22 @@ export default function Home() {
       unsub = onAuthStateChanged(auth, (u) => {
         if (u) {
           getDoc(doc(db, "users", u.uid)).then((snap: any) => {
-            if (snap.exists() && snap.data().isEmailVerified === true) {
-              const role = snap.data().role || "editor";
-              if (role === "admin") router.push("/admin");
-              else if (role === "head_editor") router.push("/head-editor");
-              else router.push("/editor");
+            if (snap.exists()) {
+              const data = snap.data();
+              if (data.isBanned === true) {
+                signOut(auth).then(() => {
+                  router.push("/login?error=banned");
+                });
+                return;
+              }
+              if (data.isEmailVerified === true) {
+                const role = data.role || "editor";
+                if (role === "admin") router.push("/admin");
+                else if (role === "head_editor") router.push("/head-editor");
+                else router.push("/editor");
+              } else {
+                router.push("/login");
+              }
             } else {
               router.push("/login");
             }

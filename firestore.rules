@@ -22,6 +22,17 @@ service cloud.firestore {
       match /notifications/{notifId} {
         allow read, write: if isSignedIn() && request.auth.uid == uid;
       }
+
+      // Sessions sub-collection
+      match /sessions/{sessionId} {
+        allow read, write: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      }
+    }
+
+    // ── Invites ───────────────────────────────────────────────────────────────
+    match /invites/{inviteId} {
+      allow read: if true;
+      allow write: if isAdmin() || (isSignedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'usedBy', 'usedAt']));
     }
 
     // ── Tasks ─────────────────────────────────────────────────────────────────

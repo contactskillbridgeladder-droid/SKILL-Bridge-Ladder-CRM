@@ -23,6 +23,7 @@ export const metadata: Metadata = {
 };
 
 import StartupLoader from "@/components/StartupLoader";
+import PWAUpdater from "@/components/PWAUpdater";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -54,6 +55,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <StartupLoader />
+        <PWAUpdater />
         {children}
       </body>
     </html>
