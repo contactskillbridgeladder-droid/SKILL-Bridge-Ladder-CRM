@@ -88,21 +88,33 @@ getFirebaseConfig().then((config) => {
       const notification = payload.notification || {};
       const data = payload.data || {};
       const clickUrl = data.url || notification.click_action || "/";
+      const isChat = data.type === "chat_message";
+
+      const actions = [
+        { action: "open", title: "Open CRM" },
+        { action: "dismiss", title: "Dismiss" },
+      ];
+
+      // Add reply action for chat messages
+      if (isChat) {
+        actions.unshift({ 
+          action: "reply", 
+          title: "Reply",
+          type: "text" // Requires user input
+        } as any);
+      }
 
       self.registration.showNotification(notification.title || "SkillBridge CRM", {
         body: notification.body || "You have a new notification",
         icon: notification.icon || "/logo.png",
         badge: "/logo.png",
         image: notification.image,
-        data: { url: clickUrl },
+        data: { url: clickUrl, chatId: data.chatId, type: data.type, recipientId: data.recipientId },
         tag: data.tag || "skillbridge-notification",
         renotify: true,
         requireInteraction: false,
         vibrate: [200, 100, 200],
-        actions: [
-          { action: "open", title: "Open CRM" },
-          { action: "dismiss", title: "Dismiss" },
-        ],
+        actions,
       });
     });
   } catch (e) {
@@ -118,6 +130,23 @@ self.addEventListener("notificationclick", (event) => {
 
   const url = event.notification.data?.url || "/";
   const absoluteUrl = url.startsWith("http") ? url : `https://crm.skillbridgeladder.in${url}`;
+
+  // Handle WhatsApp-style inline reply
+  if (event.action === "reply") {
+    const replyText = event.reply;
+    const chatId = event.notification.data?.chatId;
+    const senderId = event.notification.data?.recipientId; // The user receiving the notif is the sender of the reply
+    if (replyText && chatId && senderId) {
+      event.waitUntil(
+        fetch(`/api/messages/reply`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chatId, text: replyText, senderId })
+        }).catch(err => console.error("[SW] Reply failed:", err))
+      );
+    }
+    return;
+  }
 
   event.waitUntil(
     clients

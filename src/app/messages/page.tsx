@@ -227,6 +227,23 @@ export default function MessagesPage() {
     // Clear typing status
     set(ref(rtdb, `chats/${chatId}/typing/${currentUser.uid}`), false);
     setInputText("");
+
+    // Trigger FCM Notification for the recipient
+    fetch("/api/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        toUid: activeChat.uid,
+        toEmail: activeChat.email,
+        toName: activeChat.name,
+        title: `New Message from ${currentUser.name || "SkillBridge"}`,
+        message: inputText,
+        type: "chat_message",
+        chatId: chatId,
+        ctaText: "Reply",
+        ctaLink: "/messages"
+      })
+    }).catch(console.error);
   };
 
   // Save edited user profile information

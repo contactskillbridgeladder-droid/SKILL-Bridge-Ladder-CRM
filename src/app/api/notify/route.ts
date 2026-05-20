@@ -36,7 +36,7 @@ async function writeFirestoreNotif(token: string, toUid: string, payload: Record
 }
 
 // Send FCM push notification to a specific FCM token via REST
-async function sendFCMPush(token: string, fcmToken: string, payload: { title: string; body: string; url?: string }) {
+async function sendFCMPush(token: string, fcmToken: string, payload: { title: string; body: string; url?: string; type?: string; chatId?: string; recipientId?: string }) {
   if (!fcmToken) return;
   await fetch(`https://fcm.googleapis.com/v1/projects/${PROJECT_ID}/messages:send`, {
     method: "POST",
@@ -45,13 +45,18 @@ async function sendFCMPush(token: string, fcmToken: string, payload: { title: st
       message: {
         token: fcmToken,
         notification: { title: payload.title, body: payload.body },
+        data: { 
+          url: payload.url || "https://crm.skillbridgeladder.in",
+          type: payload.type || "general",
+          chatId: payload.chatId || "",
+          recipientId: payload.recipientId || ""
+        },
         webpush: {
           notification: {
             title: payload.title,
             body: payload.body,
             icon: "/logo.png",
             badge: "/logo.png",
-            data: { url: payload.url || "https://crm.skillbridgeladder.in" },
           },
           fcm_options: { link: payload.url || "https://crm.skillbridgeladder.in" },
         },
@@ -106,7 +111,10 @@ export async function POST(request: Request) {
       // 2. FCM push notification (if user has registered a token)
       const fcmToken = await getUserFCMToken(token, uid);
       if (fcmToken) {
-        await sendFCMPush(token, fcmToken, { title, body: message, url: ctaLink });
+        await sendFCMPush(token, fcmToken, { 
+          title, body: message, url: ctaLink, type, 
+          chatId: body.chatId || "", recipientId: uid 
+        });
       }
 
       // 3. Build typed email HTML
