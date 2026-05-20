@@ -66,11 +66,13 @@ async function sendFCMPush(token: string, fcmToken: string, payload: {
         notification: { title: payload.title, body: payload.body },
         data: { url: payload.url },
         android: {
-          priority: "high"
+          priority: "high",
+          ttl: "86400s",
         },
         webpush: {
           headers: {
-            Urgency: "high"
+            Urgency: "high",
+            TTL: "86400"
           },
           fcm_options: { link: payload.url },
         },

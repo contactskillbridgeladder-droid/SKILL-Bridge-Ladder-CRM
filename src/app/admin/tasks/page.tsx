@@ -72,7 +72,7 @@ export default function AdminTasks() {
         await updateTask(editingTask.id!, {
           title: form.title, channelId: form.channelId, type: form.type,
           editorUid: form.editorUid || null, headEditorUid: form.headEditorUid || null,
-          editorName: assignedEditor ? assignedEditor.name : "Unassigned",
+          editorName: assignedEditor?.name || "Unassigned",
           adminPrice: parseFloat(form.adminPrice) || 0,
           editorPay: parseFloat(form.editorPay) || 0,
           headPay: parseFloat(form.headPay) || 0,

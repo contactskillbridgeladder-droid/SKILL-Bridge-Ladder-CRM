@@ -38,7 +38,7 @@ async function writeFirestoreNotif(token: string, toUid: string, payload: Record
 // Send FCM push notification to a specific FCM token via REST
 async function sendFCMPush(token: string, fcmToken: string, payload: { title: string; body: string; url?: string; type?: string; chatId?: string; recipientId?: string }) {
   if (!fcmToken) return;
-  await fetch(`https://fcm.googleapis.com/v1/projects/${PROJECT_ID}/messages:send`, {
+  const res = await fetch(`https://fcm.googleapis.com/v1/projects/${PROJECT_ID}/messages:send`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -53,17 +53,24 @@ async function sendFCMPush(token: string, fcmToken: string, payload: { title: st
           recipientId: payload.recipientId || ""
         },
         android: {
-          priority: "high"
+          priority: "high",
+          ttl: "86400s", // Keep for 24 hours if offline
         },
         webpush: {
           headers: {
-            Urgency: "high"
+            Urgency: "high",
+            TTL: "86400" // Web push header for 24h
           },
           fcm_options: { link: payload.url || "https://crm.skillbridgeladder.in" }
         },
       },
     }),
   });
+  
+  if (!res.ok) {
+    const errorText = await res.text();
+    console.error("[FCM Error]", res.status, errorText);
+  }
 }
 
 // Fetch user's FCM token from Firestore

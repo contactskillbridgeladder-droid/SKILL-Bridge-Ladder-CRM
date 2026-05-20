@@ -4,7 +4,7 @@ import { initFirebase } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { getUsers, UserProfile } from "@/lib/firestore";
 import { useRouter } from "next/navigation";
-import { ref, set, push, onValue, off, update, serverTimestamp } from "firebase/database";
+import { ref, set, push, onValue, off, update, serverTimestamp, get } from "firebase/database";
 import { doc, updateDoc } from "firebase/firestore";
 
 interface Message {
@@ -134,6 +134,23 @@ export default function MessagesPage() {
       [currentUser.uid]: 0
     });
 
+    // ── Track Active Presence (Don't notify if looking at chat) ──
+    const presenceRef = ref(rtdb, `chats/${chatId}/active/${currentUser.uid}`);
+    
+    // Set to true immediately upon opening
+    set(presenceRef, true);
+    
+    // If they close the app/lose internet, mark false
+    import("firebase/database").then(({ onDisconnect }) => {
+      onDisconnect(presenceRef).set(false);
+    });
+
+    // Track tab visibility (minimize/switch tabs)
+    const handleVisibilityChange = () => {
+      set(presenceRef, !document.hidden);
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     // Listen to messages
     onValue(messagesRef, snap => {
       const msgs: Message[] = [];
@@ -180,6 +197,8 @@ export default function MessagesPage() {
     });
 
     return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      set(presenceRef, false);
       off(messagesRef);
       off(typingRef);
     };
@@ -228,22 +247,28 @@ export default function MessagesPage() {
     set(ref(rtdb, `chats/${chatId}/typing/${currentUser.uid}`), false);
     setInputText("");
 
-    // Trigger FCM Notification for the recipient
-    fetch("/api/notify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        toUid: activeChat.uid,
-        toEmail: activeChat.email,
-        toName: activeChat.name,
-        title: `New Message from ${currentUser.name || "SkillBridge"}`,
-        message: inputText,
-        type: "chat_message",
-        chatId: chatId,
-        ctaText: "Reply",
-        ctaLink: "/messages"
-      })
-    }).catch(console.error);
+    // Check if recipient is currently looking at this chat
+    const recipientActiveSnap = await get(ref(rtdb, `chats/${chatId}/active/${activeChat.uid}`));
+    const isRecipientActive = recipientActiveSnap.exists() && recipientActiveSnap.val() === true;
+
+    if (!isRecipientActive) {
+      // Trigger FCM Notification for the recipient ONLY if they don't have the chat open
+      fetch("/api/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          toUid: activeChat.uid,
+          toEmail: activeChat.email,
+          toName: activeChat.name,
+          title: `New Message from ${currentUser.name || "SkillBridge"}`,
+          message: inputText,
+          type: "chat_message",
+          chatId: chatId,
+          ctaText: "Reply",
+          ctaLink: "/messages"
+        })
+      }).catch(console.error);
+    }
   };
 
   // Save edited user profile information
