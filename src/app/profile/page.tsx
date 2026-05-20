@@ -44,7 +44,7 @@ export default function ProfilePage() {
             whatsappNumber: d?.whatsappNumber || "",
             role: d?.role || "editor",
             sourced_by: d?.sourced_by || "",
-            emailVerified: u.emailVerified
+            emailVerified: d?.isEmailVerified === true
           };
           setUser(profileData);
           setNameInput(profileData.name);

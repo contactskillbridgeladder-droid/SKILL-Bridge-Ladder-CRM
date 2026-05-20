@@ -37,10 +37,23 @@ export default function VersionPage() {
 
   const releases: VersionRelease[] = [
     {
+      version: "v1.3.0",
+      tag: "Custom OTP Verification & Stateless Mailer",
+      date: "May 20, 2026",
+      status: "latest",
+      changes: [
+        "Replaced client-side Firebase sendEmailVerification (which failed with 400 bad request) with custom 6-digit OTP verification.",
+        "Removed Firebase Admin SDK JSON dependency from send-verification route to resolve server-side 500 errors on Vercel.",
+        "Stateless email dispatcher connected directly to high-deliverability Resend Worker API.",
+        "Upgraded signup and login verification state screen with visual 6-digit input field, verification loaders, and resend timers.",
+        "Fixed login verification redirections to store and read verification status directly from Firestore users collection."
+      ]
+    },
+    {
       version: "v1.2.0",
       tag: "Security & Dynamic Invites Update",
       date: "May 19, 2026",
-      status: "latest",
+      status: "stable",
       changes: [
         "Dynamic Invites system with customizable expiry dates, invite links, and specific roles.",
         "Zero-secrets source code security via Cloudflare Workers dynamically fetching Firebase config.",

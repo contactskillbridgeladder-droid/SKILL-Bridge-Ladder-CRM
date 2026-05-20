@@ -13,18 +13,18 @@ export default function Home() {
     initFirebase().then(({ auth, db }) => {
       unsub = onAuthStateChanged(auth, (u) => {
         if (u) {
-          if (u.emailVerified) {
-            getDoc(doc(db, "users", u.uid)).then((snap: any) => {
-              const role = snap.exists() ? snap.data().role : "editor";
+          getDoc(doc(db, "users", u.uid)).then((snap: any) => {
+            if (snap.exists() && snap.data().isEmailVerified === true) {
+              const role = snap.data().role || "editor";
               if (role === "admin") router.push("/admin");
               else if (role === "head_editor") router.push("/head-editor");
               else router.push("/editor");
-            }).catch(() => {
+            } else {
               router.push("/login");
-            });
-          } else {
+            }
+          }).catch(() => {
             router.push("/login");
-          }
+          });
         } else {
           router.push("/login");
         }

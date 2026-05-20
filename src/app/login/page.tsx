@@ -30,6 +30,7 @@ function LoginForm() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [needsVerification, setNeedsVerification] = useState(false);
+  const [verificationInput, setVerificationInput] = useState("");
   const [checkingAuth, setCheckingAuth] = useState(true);
   const router = useRouter();
 
@@ -39,19 +40,21 @@ function LoginForm() {
     initFirebase().then(({ auth, db }) => {
       unsub = onAuthStateChanged(auth, (u) => {
         if (u) {
-          if (u.emailVerified) {
-            getDoc(doc(db, "users", u.uid)).then((snap: any) => {
-              const role = snap.exists() ? snap.data().role : "editor";
+          getDoc(doc(db, "users", u.uid)).then((snap: any) => {
+            const userData = snap.exists() ? snap.data() : {};
+            const isVerified = userData.isEmailVerified === true;
+            if (isVerified) {
+              const role = userData.role || "editor";
               if (role === "admin") router.push("/admin");
               else if (role === "head_editor") router.push("/head-editor");
               else router.push("/editor");
-            }).catch(() => {
+            } else {
+              setNeedsVerification(true);
               setCheckingAuth(false);
-            });
-          } else {
-            setNeedsVerification(true);
+            }
+          }).catch(() => {
             setCheckingAuth(false);
-          }
+          });
         } else {
           setCheckingAuth(false);
         }
@@ -116,22 +119,8 @@ function LoginForm() {
         // Create authentication account
         const cred = await createUserWithEmailAndPassword(auth, email, password);
 
-        // Send High-deliverability verification email via custom API (Resend)
-        try {
-          await fetch("/api/auth/send-verification", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email }),
-          });
-        } catch (emailErr) {
-          console.error("Custom verification email failed:", emailErr);
-          // Fallback to client-side Firebase verification if custom API fails
-          try {
-            await sendEmailVerification(cred.user);
-          } catch (fbErr) {
-            console.error("Firebase fallback verification failed:", fbErr);
-          }
-        }
+        // Generate custom OTP code
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
 
         // Write complete User Profile to Firestore
         await setDoc(doc(db, "users", cred.user.uid), {
@@ -141,8 +130,21 @@ function LoginForm() {
           whatsappNumber: whatsapp,
           role: signupRole,
           sourced_by: sourcedBy,
-          createdAt: new Date()
+          createdAt: new Date(),
+          isEmailVerified: false,
+          emailVerificationCode: code
         });
+
+        // Send High-deliverability verification email via custom API (Resend)
+        try {
+          await fetch("/api/auth/send-verification", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, code }),
+          });
+        } catch (emailErr) {
+          console.error("Custom verification email failed:", emailErr);
+        }
 
         // Mark dynamic invite as used
         if (inviteCodeTrimmed !== "SKILLBRIDGE2026") {
@@ -158,29 +160,33 @@ function LoginForm() {
       } else {
         const cred = await signInWithEmailAndPassword(auth, email, password);
         
-        // Force Email Verification
-        if (!cred.user.emailVerified) {
+        // Fetch Firestore profile to verify custom email status
+        const snap = await getDoc(doc(db, "users", cred.user.uid));
+        const userData = snap.exists() ? snap.data() : {};
+        const isVerified = userData.isEmailVerified === true;
+        
+        if (!isVerified) {
+          // Generate fresh verification code and email it
+          const code = Math.floor(100000 + Math.random() * 900000).toString();
+          const { updateDoc } = await import("firebase/firestore");
+          await updateDoc(doc(db, "users", cred.user.uid), {
+            emailVerificationCode: code
+          });
+
           try {
             await fetch("/api/auth/send-verification", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ email: cred.user.email }),
+              body: JSON.stringify({ email: cred.user.email, code }),
             });
           } catch (emailErr) {
             console.error("Custom verification email failed:", emailErr);
-            try {
-              await sendEmailVerification(cred.user);
-            } catch (fbErr) {
-              console.error("Firebase fallback verification failed:", fbErr);
-            }
           }
           setNeedsVerification(true);
           setLoading(false);
           return;
         }
 
-        const snap = await getDoc(doc(db, "users", cred.user.uid));
-        const userData = snap.exists() ? snap.data() : {};
         const role = userData.role || "editor";
         const name = userData.name || cred.user.email || "Team Member";
 
@@ -223,52 +229,88 @@ function LoginForm() {
     }
   };
 
-  const checkIfVerified = async () => {
+  const verifyOTPCode = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setError("");
     setMessage("");
+    if (!verificationInput.trim()) {
+      setError("Please enter the verification code.");
+      return;
+    }
+    setLoading(true);
     try {
       const { auth, db } = await initFirebase();
-      if (auth.currentUser) {
-        await auth.currentUser.reload();
-        if (auth.currentUser.emailVerified) {
-          const snap = await getDoc(doc(db, "users", auth.currentUser.uid));
-          const role = snap.exists() ? snap.data().role : "editor";
-          if (role === "admin") router.push("/admin");
-          else if (role === "head_editor") router.push("/head-editor");
-          else router.push("/editor");
-        } else {
-          setError("Email is still not verified. Please check your inbox and verify.");
-        }
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error("No user is currently signed in. Please log in again.");
+      }
+
+      const userDocRef = doc(db, "users", user.uid);
+      const snap = await getDoc(userDocRef);
+      if (!snap.exists()) {
+        throw new Error("User profile not found.");
+      }
+
+      const userData = snap.data();
+      const correctCode = userData.emailVerificationCode;
+      
+      if (verificationInput.trim() === correctCode) {
+        // Mark verified in Firestore!
+        const { updateDoc } = await import("firebase/firestore");
+        await updateDoc(userDocRef, {
+          isEmailVerified: true,
+          emailVerificationCode: null // clear the code
+        });
+
+        // Set success message and redirect
+        setMessage("Email verified successfully! Redirecting...");
+        
+        const role = userData.role || "editor";
+        if (role === "admin") router.push("/admin");
+        else if (role === "head_editor") router.push("/head-editor");
+        else router.push("/editor");
+      } else {
+        setError("Invalid verification code. Please check your email and try again.");
       }
     } catch (err: any) {
       setError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
   const resendVerification = async () => {
     setError("");
     setMessage("");
+    setLoading(true);
     try {
-      const { auth } = await initFirebase();
-      if (auth.currentUser && auth.currentUser.email) {
-        try {
-          const res = await fetch("/api/auth/send-verification", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: auth.currentUser.email }),
-          });
-          if (res.ok) {
-            setMessage("Verification email has been resent successfully!");
-          } else {
-            throw new Error("Failed to send via custom mailer");
-          }
-        } catch {
-          await sendEmailVerification(auth.currentUser);
-          setMessage("Verification email has been resent successfully!");
+      const { auth, db } = await initFirebase();
+      const user = auth.currentUser;
+      if (user && user.email) {
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        const userDocRef = doc(db, "users", user.uid);
+        
+        const { updateDoc } = await import("firebase/firestore");
+        await updateDoc(userDocRef, {
+          emailVerificationCode: code
+        });
+
+        const res = await fetch("/api/auth/send-verification", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: user.email, code }),
+        });
+        
+        if (res.ok) {
+          setMessage("A new verification code has been sent to your email!");
+        } else {
+          throw new Error("Failed to send verification email. Please try again.");
         }
       }
     } catch (err: any) {
       setError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -310,19 +352,43 @@ function LoginForm() {
           <div style={{ fontSize: 44, marginBottom: 20 }}>✉️</div>
           <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 12, color: "var(--text)" }}>Verify Your Email</h2>
           <p style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.6, marginBottom: 24 }}>
-            We have sent a verification link to <strong>{email || "your email address"}</strong>.<br/>
-            Please check your inbox (and spam folder) and verify your email to activate your account.
+            We have sent a 6-digit verification code to <strong>{email || "your email address"}</strong>.<br/>
+            Please check your inbox (and spam folder) and enter it below.
           </p>
+
+          <form onSubmit={verifyOTPCode} style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 20 }}>
+            <div className="form-group">
+              <input
+                type="text"
+                required
+                maxLength={6}
+                value={verificationInput}
+                onChange={(e) => setVerificationInput(e.target.value.replace(/\D/g, ""))}
+                placeholder="Enter 6-digit code"
+                style={{
+                  textAlign: "center",
+                  fontSize: 24,
+                  fontWeight: 800,
+                  letterSpacing: 4,
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  color: "var(--text)",
+                }}
+              />
+            </div>
+            <button className="btn btn-primary" type="submit" disabled={loading} style={{ width: "100%", justifyContent: "center" }}>
+              {loading ? "Verifying..." : "Verify Code"}
+            </button>
+          </form>
 
           {error && <div className="form-error" style={{ marginBottom: 16 }}>{error}</div>}
           {message && <div style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", color: "#34d399", borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 16 }}>{message}</div>}
 
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <button className="btn btn-primary" onClick={checkIfVerified} style={{ width: "100%", justifyContent: "center" }}>
-              I have verified my email
-            </button>
-            <button className="btn btn-secondary" onClick={resendVerification} style={{ width: "100%", justifyContent: "center" }}>
-              Resend Verification Link
+            <button className="btn btn-secondary" onClick={resendVerification} disabled={loading} style={{ width: "100%", justifyContent: "center" }}>
+              Resend Verification Code
             </button>
             <button className="btn btn-ghost" onClick={handleLogout} style={{ width: "100%", justifyContent: "center", color: "#f87171" }}>
               Back to Sign In
