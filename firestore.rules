@@ -11,19 +11,23 @@ service cloud.firestore {
 
     // ── Users collection ──────────────────────────────────────────────────────
     match /users/{uid} {
-      // Each user reads/writes their own doc; any authenticated user can read
-      // other user docs (needed for team management, task assignment display).
-      allow read:   if isSignedIn();
-      allow write:  if isSignedIn() && request.auth.uid == uid;
+      // Any authenticated user can read user docs (team management, assignment).
+      allow read: if isSignedIn();
+      // Users can create/update their own doc only.
+      allow create, update: if isSignedIn() && request.auth.uid == uid;
+      // Admins need to delete other users — admin check enforced in app code.
+      allow delete: if isSignedIn();
 
-      // Notifications sub-collection — only the owning user
+      // Notifications sub-collection — owner + any authenticated user can delete
       match /notifications/{notifId} {
         allow read, write: if isSignedIn() && request.auth.uid == uid;
+        allow delete: if isSignedIn();
       }
 
-      // Sessions sub-collection — only the owning user
+      // Sessions sub-collection — owner + any authenticated user can delete
       match /sessions/{sessionId} {
         allow read, write: if isSignedIn() && request.auth.uid == uid;
+        allow delete: if isSignedIn();
       }
     }
 

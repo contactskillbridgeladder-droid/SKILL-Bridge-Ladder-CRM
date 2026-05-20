@@ -97,7 +97,7 @@ export default function NotificationBell({ uid }: { uid: string }) {
       {open && (
         <>
           <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-          <div style={{ position: "absolute", top: 44, right: 0, width: 360, background: "var(--bg-card)", border: "1px solid var(--border-bright)", borderRadius: 14, boxShadow: "0 20px 60px rgba(0,0,0,0.6)", zIndex: 50, overflow: "hidden" }}>
+          <div style={{ position: "absolute", bottom: 44, right: 0, width: 360, maxHeight: "80vh", background: "var(--bg-card)", border: "1px solid var(--border-bright)", borderRadius: 14, boxShadow: "0 -20px 60px rgba(0,0,0,0.6)", zIndex: 50, overflow: "hidden", display: "flex", flexDirection: "column" }}>
             <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ fontWeight: 700, fontSize: 14 }}>Notifications {unread > 0 && <span style={{ background: "rgba(124,58,237,0.2)", color: "#a78bfa", borderRadius: 99, padding: "1px 8px", fontSize: 12, marginLeft: 6 }}>{unread} new</span>}</div>
               {unread > 0 && <button onClick={markAllRead} style={{ background: "none", border: "none", color: "var(--accent-light)", fontSize: 12, cursor: "pointer", fontWeight: 500 }}>Mark all read</button>}
