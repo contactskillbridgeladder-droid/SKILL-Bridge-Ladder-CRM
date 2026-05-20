@@ -83,7 +83,9 @@ export async function createTask(data: Omit<Task, "id">): Promise<string> {
 
 export async function updateTask(id: string, data: Partial<Task>): Promise<void> {
   const db = await getDb();
-  await updateDoc(doc(db, "tasks", id), { ...data, updatedAt: serverTimestamp() });
+  // Strip any undefined values to prevent Firebase "Unsupported field value" crashes
+  const cleanData = Object.fromEntries(Object.entries(data).filter(([_, v]) => v !== undefined));
+  await updateDoc(doc(db, "tasks", id), { ...cleanData, updatedAt: serverTimestamp() });
 }
 
 // ── USERS ─────────────────────────────────────────────────────────────────────
@@ -147,7 +149,8 @@ export async function createChannel(data: Omit<Channel, "id">): Promise<string> 
 
 export async function updateChannel(id: string, data: Partial<Channel>): Promise<void> {
   const db = await getDb();
-  await updateDoc(doc(db, "channels", id), data);
+  const cleanData = Object.fromEntries(Object.entries(data).filter(([_, v]) => v !== undefined));
+  await updateDoc(doc(db, "channels", id), cleanData);
 }
 
 export async function deleteChannel(id: string): Promise<void> {
