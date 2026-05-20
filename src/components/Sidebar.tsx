@@ -148,8 +148,12 @@ export default function Sidebar({ role="admin", userName="", uid="" }:
       if (token && uid) {
         const { db } = await initFirebase();
         if (db) {
-          const { doc, updateDoc } = await import("firebase/firestore");
-          await updateDoc(doc(db, "users", uid), { fcmToken: token });
+          const { doc, updateDoc, arrayUnion } = await import("firebase/firestore");
+          // Store token in an array so a user can have multiple devices active at once
+          await updateDoc(doc(db, "users", uid), { 
+            fcmTokens: arrayUnion(token),
+            fcmToken: token // Keep legacy field for backwards compatibility temporarily
+          });
         }
       }
     } catch (e) { 

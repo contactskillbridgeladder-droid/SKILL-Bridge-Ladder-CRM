@@ -67,13 +67,23 @@ async function sendFCMPush(token: string, fcmToken: string, payload: { title: st
 }
 
 // Fetch user's FCM token from Firestore
-async function getUserFCMToken(token: string, uid: string): Promise<string | null> {
+async function getUserFCMTokens(token: string, uid: string): Promise<string[]> {
   const res = await fetch(`${FIRESTORE_URL}/users/${uid}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) return null;
+  if (!res.ok) return [];
   const data = await res.json();
-  return data.fields?.fcmToken?.stringValue || null;
+  
+  const tokens = new Set<string>();
+  if (data.fields?.fcmToken?.stringValue) {
+    tokens.add(data.fields.fcmToken.stringValue);
+  }
+  if (data.fields?.fcmTokens?.arrayValue?.values) {
+    data.fields.fcmTokens.arrayValue.values.forEach((v: any) => {
+      if (v.stringValue) tokens.add(v.stringValue);
+    });
+  }
+  return Array.from(tokens);
 }
 
 export async function POST(request: Request) {
@@ -109,9 +119,9 @@ export async function POST(request: Request) {
       // 1. In-app Firestore notification
       const notifId = await writeFirestoreNotif(token, uid, { type, title, message, ctaLink });
 
-      // 2. FCM push notification (if user has registered a token)
-      const fcmToken = await getUserFCMToken(token, uid);
-      if (fcmToken) {
+      // 2. FCM push notification (if user has registered tokens)
+      const fcmTokens = await getUserFCMTokens(token, uid);
+      for (const fcmToken of fcmTokens) {
         await sendFCMPush(token, fcmToken, { 
           title, body: message, url: ctaLink, type, 
           chatId: body.chatId || "", recipientId: uid 

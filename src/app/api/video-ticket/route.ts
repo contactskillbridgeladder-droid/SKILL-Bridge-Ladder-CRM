@@ -64,25 +64,15 @@ async function sendFCMPush(token: string, fcmToken: string, payload: {
       message: {
         token: fcmToken,
         notification: { title: payload.title, body: payload.body },
+        data: { url: payload.url },
+        android: {
+          priority: "high"
+        },
         webpush: {
-          notification: {
-            title: payload.title,
-            body: payload.body,
-            icon: "https://crm.skillbridgeladder.in/logo.png",
-            badge: "https://crm.skillbridgeladder.in/logo.png",
-            requireInteraction: false,
-            vibrate: [200, 100, 200],
-            tag: "skillbridge-notification",
-            renotify: true,
+          headers: {
+            Urgency: "high"
           },
           fcm_options: { link: payload.url },
-        },
-        android: {
-          notification: {
-            icon: "logo",
-            color: "#7c3aed",
-            click_action: payload.url,
-          },
         },
       },
     }),
@@ -158,19 +148,28 @@ export async function POST(request: Request) {
 
     // ── 3. Collect recipients ─────────────────────────────────────────────────
     const recipients: Array<{
-      uid: string; email: string; name: string; role: "head_editor" | "editor"; fcmToken?: string;
+      uid: string; email: string; name: string; role: "head_editor" | "editor"; fcmTokens: string[];
     }> = [];
 
     const addRecipient = async (uid: string, role: "head_editor" | "editor") => {
       if (!uid || recipients.find(r => r.uid === uid)) return;
       const doc = await fsGet(token, `users/${uid}`);
       if (!doc?.fields) return;
+      
+      const tokens = new Set<string>();
+      if (doc.fields.fcmToken?.stringValue) tokens.add(doc.fields.fcmToken.stringValue);
+      if (doc.fields.fcmTokens?.arrayValue?.values) {
+        doc.fields.fcmTokens.arrayValue.values.forEach((v: any) => {
+          if (v.stringValue) tokens.add(v.stringValue);
+        });
+      }
+
       recipients.push({
         uid,
         email: doc.fields.email?.stringValue || "",
         name: doc.fields.name?.stringValue || role,
         role,
-        fcmToken: doc.fields.fcmToken?.stringValue || undefined,
+        fcmTokens: Array.from(tokens),
       });
     };
 
@@ -220,8 +219,8 @@ export async function POST(request: Request) {
         });
 
         // (b) FCM push → installed PWA / downloaded app
-        if (r.fcmToken) {
-          await sendFCMPush(token, r.fcmToken, {
+        for (const fcmToken of r.fcmTokens) {
+          await sendFCMPush(token, fcmToken, {
             title: notifTitle,
             body: notifMessage,
             url: ctaLink,
@@ -254,7 +253,7 @@ export async function POST(request: Request) {
           html
         );
 
-        return { uid: r.uid, name: r.name, role: r.role, pushedPWA: !!r.fcmToken };
+        return { uid: r.uid, name: r.name, role: r.role, pushedPWA: r.fcmTokens.length > 0 };
       })
     );
 

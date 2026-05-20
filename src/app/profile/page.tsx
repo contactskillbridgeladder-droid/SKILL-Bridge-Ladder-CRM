@@ -184,8 +184,11 @@ export default function ProfilePage() {
         const token = await getFCMToken();
         if (token && user) {
           const { db } = await initFirebase();
-          const { doc, updateDoc } = await import("firebase/firestore");
-          await updateDoc(doc(db, "users", user.uid), { fcmToken: token });
+          const { doc, updateDoc, arrayUnion } = await import("firebase/firestore");
+          await updateDoc(doc(db, "users", user.uid), { 
+            fcmTokens: arrayUnion(token),
+            fcmToken: token 
+          });
         }
       } catch (e) {
         console.error("FCM token update failed:", e);
