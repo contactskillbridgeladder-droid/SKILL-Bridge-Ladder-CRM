@@ -179,18 +179,23 @@ export default function AdminChannels() {
         zohoLogged: false
       });
 
-      // Send log & notifications
-      const { logActivity } = await import("@/lib/firestore");
-      const resUser = await fetch("/api/auth/me").catch(() => null);
-      const me = resUser ? await resUser.json() : null;
-      await logActivity("task_created", `Imported/assigned task: "${taskForm.title}" for channel "${selectedChannelForHub.name}"`, me || { uid: "admin", name: "Administrator", email: "admin@crm.com" });
+      // Send log (non-blocking — task is already created)
+      try {
+        const { logActivity } = await import("@/lib/firestore");
+        const { getAuth } = await import("firebase/auth");
+        const currentUser = getAuth().currentUser;
+        const me = currentUser
+          ? { uid: currentUser.uid, name: currentUser.displayName || "Admin", email: currentUser.email || "" }
+          : { uid: "admin", name: "Administrator", email: "admin@crm.com" };
+        await logActivity("task_created", `Imported/assigned task: "${taskForm.title}" for channel "${selectedChannelForHub.name}"`, me);
+      } catch {}
 
       if (taskForm.editorUid) {
-        await fetch("/api/notify", {
+        fetch("/api/notify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            userId: taskForm.editorUid,
+            toUid: taskForm.editorUid,
             title: "New Task Assigned 📋",
             message: `You have been assigned "${taskForm.title}" for channel "${selectedChannelForHub.name}".`,
             type: "task_assigned",
@@ -199,11 +204,11 @@ export default function AdminChannels() {
         }).catch(() => null);
       }
       if (taskForm.headEditorUid) {
-        await fetch("/api/notify", {
+        fetch("/api/notify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            userId: taskForm.headEditorUid,
+            toUid: taskForm.headEditorUid,
             title: "New Task Assigned 📋",
             message: `New task "${taskForm.title}" for channel "${selectedChannelForHub.name}" needs supervision.`,
             type: "task_assigned",
