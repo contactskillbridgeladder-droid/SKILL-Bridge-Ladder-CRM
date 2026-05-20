@@ -174,6 +174,11 @@ export interface Payment {
   createdAt?: any;
 }
 
+export async function createPayment(data: Omit<Payment, "id" | "createdAt">): Promise<void> {
+  const db = await getDb();
+  await addDoc(collection(db, "payments"), { ...data, createdAt: serverTimestamp() });
+}
+
 export async function getPayments(): Promise<Payment[]> {
   const db = await getDb();
   const snap = await getDocs(query(collection(db, "payments"), orderBy("createdAt", "desc")));

@@ -116,9 +116,50 @@ export default function AdminTasks() {
     }
   };
 
-  const handleStatusChange = async (id: string, status: Task["status"]) => {
-    await updateTask(id, { status });
+  const handleStatusChange = async (t: Task, status: Task["status"]) => {
+    // Prevent duplicate payment records if already approved
+    if (t.status === "Approved" && status === "Approved") return;
+
+    await updateTask(t.id!, { status });
     showToast("Status updated");
+
+    // Automatically generate Payment Ledger entries if approved
+    if (status === "Approved") {
+      const { createPayment } = await import("@/lib/firestore");
+      
+      // Editor Payment
+      if (t.editorUid && t.editorPay && t.editorPay > 0) {
+        const editor = users.find(u => u.uid === t.editorUid);
+        await createPayment({
+          taskId: t.id!,
+          taskTitle: t.title,
+          toUid: t.editorUid,
+          toName: t.editorName || editor?.name || "Editor",
+          toEmail: editor?.email || "",
+          role: "editor",
+          amount: t.editorPay,
+          status: "Pending",
+          zohoLogged: false
+        }).catch(console.error);
+      }
+
+      // Head Editor Payment
+      if (t.headEditorUid && t.headPay && t.headPay > 0) {
+        const head = users.find(u => u.uid === t.headEditorUid);
+        await createPayment({
+          taskId: t.id!,
+          taskTitle: t.title,
+          toUid: t.headEditorUid,
+          toName: head?.name || "Head Editor",
+          toEmail: head?.email || "",
+          role: "head_editor",
+          amount: t.headPay,
+          status: "Pending",
+          zohoLogged: false
+        }).catch(console.error);
+      }
+      showToast("Payment ledgers generated!");
+    }
   };
 
   const showToast = (msg: string) => {
@@ -190,7 +231,7 @@ export default function AdminTasks() {
                     <td>
                       <select
                         value={t.status}
-                        onChange={e => handleStatusChange(t.id!, e.target.value as Task["status"])}
+                        onChange={e => handleStatusChange(t, e.target.value as Task["status"])}
                         style={{ background: "transparent", border: "none", cursor: "pointer", color: "inherit", fontSize: 12, outline: "none" }}
                       >
                         <option value={t.status}>{t.status}</option>
@@ -202,7 +243,7 @@ export default function AdminTasks() {
                     <td>
                       <div style={{ display: "flex", gap: 6 }}>
                         <button className="btn btn-ghost btn-sm" onClick={() => handleEditClick(t)}>Edit</button>
-                        <button className="btn btn-ghost btn-sm" onClick={() => handleStatusChange(t.id!, "Approved")} disabled={t.status === "Approved"}>Approve</button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => handleStatusChange(t, "Approved")} disabled={t.status === "Approved"}>Approve</button>
                       </div>
                     </td>
                   </tr>
