@@ -180,7 +180,31 @@ function LoginForm() {
         }
 
         const snap = await getDoc(doc(db, "users", cred.user.uid));
-        const role = snap.exists() ? snap.data().role : "editor";
+        const userData = snap.exists() ? snap.data() : {};
+        const role = userData.role || "editor";
+        const name = userData.name || cred.user.email || "Team Member";
+
+        // Fire security login alert email asynchronously
+        try {
+          const userAgent = navigator.userAgent;
+          const timeString = new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
+          fetch("/api/notify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              toUid: cred.user.uid,
+              toEmail: cred.user.email,
+              toName: name,
+              title: "🔒 Security Alert: New Login Detected",
+              message: `We detected a new login to your SkillBridge CRM account on ${timeString} (IST).\n\nDevice details:\n${userAgent}\n\nIf this was you, no further action is required.`,
+              type: "general",
+              subject: "Security Alert: New Login Detected"
+            })
+          }).catch((e) => console.error("Async login notify failed:", e));
+        } catch (alertErr) {
+          console.error("Login alert setup failed:", alertErr);
+        }
+
         if (role === "admin") router.push("/admin");
         else if (role === "head_editor") router.push("/head-editor");
         else router.push("/editor");
