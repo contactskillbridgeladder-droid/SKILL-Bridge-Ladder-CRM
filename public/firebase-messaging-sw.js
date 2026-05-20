@@ -89,6 +89,8 @@ getFirebaseConfig().then((config) => {
       const data = payload.data || {};
       const clickUrl = data.url || notification.click_action || "/";
       const isChat = data.type === "chat_message";
+      const title = data.title || notification.title || "SkillBridge CRM";
+      const body = data.body || notification.body || "You have a new notification";
 
       const actions = [
         { action: "open", title: "Open CRM" },
@@ -104,13 +106,12 @@ getFirebaseConfig().then((config) => {
         } as any);
       }
 
-      self.registration.showNotification(notification.title || "SkillBridge CRM", {
-        body: notification.body || "You have a new notification",
-        icon: notification.icon || "/logo.png",
+      self.registration.showNotification(title, {
+        body: body,
+        icon: "/logo.png",
         badge: "/logo.png",
-        image: notification.image,
         data: { url: clickUrl, chatId: data.chatId, type: data.type, recipientId: data.recipientId },
-        tag: data.tag || "skillbridge-notification",
+        tag: data.tag || (isChat ? `chat-${data.chatId}` : "skillbridge-notification"),
         renotify: true,
         requireInteraction: false,
         vibrate: [200, 100, 200],
@@ -173,21 +174,46 @@ self.addEventListener("notificationclick", (event) => {
 self.addEventListener("push", (event) => {
   if (!event.data) return;
 
-  let data = {};
+  // If Firebase Messaging SDK already handled it, this might be redundant.
+  // But for data-only messages on Android Chrome, the SDK sometimes misses it, so we handle it manually.
+  let data: any = {};
   try {
     data = event.data.json();
   } catch {
-    data = { title: "SkillBridge CRM", body: event.data.text() };
+    return; // Cannot parse
+  }
+
+  // If the payload has a 'notification' object, the browser handles it automatically.
+  if (data.notification) return;
+
+  // Extract from FCM data object
+  const payload = data.data || {};
+  const isChat = payload.type === "chat_message";
+  const title = payload.title || "SkillBridge CRM";
+  const body = payload.body || "You have a new notification";
+
+  const actions = [
+    { action: "open", title: "Open CRM" },
+    { action: "dismiss", title: "Dismiss" },
+  ];
+
+  if (isChat) {
+    actions.unshift({ 
+      action: "reply", 
+      title: "Reply",
+      type: "text"
+    } as any);
   }
 
   event.waitUntil(
-    self.registration.showNotification(data.title || "SkillBridge CRM", {
-      body: data.body || "",
-      icon: data.icon || "/logo.png",
+    self.registration.showNotification(title, {
+      body: body,
+      icon: "/logo.png",
       badge: "/logo.png",
-      data: { url: data.url || "/" },
+      data: { url: payload.url || "/", chatId: payload.chatId, type: payload.type, recipientId: payload.recipientId },
       vibrate: [200, 100, 200],
-      tag: "skillbridge-push",
+      tag: payload.tag || (isChat ? `chat-${payload.chatId}` : "skillbridge-push"),
+      actions
     })
   );
 });

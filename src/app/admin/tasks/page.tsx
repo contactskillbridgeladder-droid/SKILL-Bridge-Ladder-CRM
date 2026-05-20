@@ -20,6 +20,7 @@ export default function AdminTasks() {
   const [showModal, setShowModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
 
   // New Task Form
   const [form, setForm] = useState({
@@ -48,12 +49,39 @@ export default function AdminTasks() {
   const editors = users.filter(u => u.role === "editor");
   const headEditors = users.filter(u => u.role === "head_editor");
 
+  const handleEditClick = (t: Task) => {
+    setEditingTask(t);
+    setForm({
+      title: t.title, channelId: t.channelId, type: t.type,
+      editorUid: t.editorUid || "", headEditorUid: t.headEditorUid || "",
+      adminPrice: String(t.adminPrice), editorPay: String(t.editorPay), headPay: String(t.headPay),
+      youtubeUrl: t.youtubeUrl, notes: t.notes, due: t.due
+    });
+    setShowModal(true);
+  };
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
-      // Call /api/video-ticket — creates task + auto-notifies head editor + all subordinate editors
-      const res = await fetch("/api/video-ticket", {
+      if (editingTask) {
+        // Find assigned editor names for UI
+        const assignedEditor = users.find(u => u.uid === form.editorUid);
+        const adminEarning = parseFloat(form.adminPrice) - parseFloat(form.editorPay) - parseFloat(form.headPay);
+
+        await updateTask(editingTask.id!, {
+          title: form.title, channelId: form.channelId, type: form.type,
+          editorUid: form.editorUid || null, headEditorUid: form.headEditorUid || null,
+          editorName: assignedEditor ? assignedEditor.name : "Unassigned",
+          adminPrice: parseFloat(form.adminPrice) || 0,
+          editorPay: parseFloat(form.editorPay) || 0,
+          headPay: parseFloat(form.headPay) || 0,
+          adminEarning, youtubeUrl: form.youtubeUrl, notes: form.notes, due: form.due
+        });
+        showToast("✅ Task updated successfully");
+      } else {
+        // Call /api/video-ticket — creates task + auto-notifies head editor + all subordinate editors
+        const res = await fetch("/api/video-ticket", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -70,12 +98,14 @@ export default function AdminTasks() {
           editorUid: form.editorUid || null,
         }),
       });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error);
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        showToast(`✅ Task created! Notified ${data.notifiedCount} team member(s) via FCM + email`);
+      }
 
       setShowModal(false);
+      setEditingTask(null);
       setForm({ title: "", channelId: "", type: "Main Edit", editorUid: "", headEditorUid: "", adminPrice: "", editorPay: "", headPay: "", youtubeUrl: "", notes: "", due: "" });
-      showToast(`✅ Task created! Notified ${data.notifiedCount} team member(s) via FCM + email`);
     } catch (err: any) {
       showToast("❌ " + err.message);
     } finally {
@@ -149,7 +179,7 @@ export default function AdminTasks() {
                   <tr><td colSpan={9}><div className="empty-state"><div className="empty-icon">📋</div><div className="empty-title">No tasks yet</div><div className="empty-desc">Click "New Task" to create the first one.</div></div></td></tr>
                 ) : filtered.map(t => (
                   <tr key={t.id}>
-                    <td><span className="cell-mono">{t.id?.slice(0, 6)}</span></td>
+                    <td><span className="cell-mono">{t.taskNumber || t.id?.slice(0, 6)}</span></td>
                     <td><span className="cell-strong">{t.title}</span></td>
                     <td><span className="channel-pill">{t.channel}</span></td>
                     <td><span className={`badge ${t.type === "Shorts" ? "badge-blue" : "badge-purple"}`}>{t.type}</span></td>
@@ -167,7 +197,10 @@ export default function AdminTasks() {
                     <td><span style={{ fontWeight: 600, color: "var(--green)" }}>₹{t.adminPrice?.toLocaleString("en-IN")}</span></td>
                     <td style={{ color: t.due === "Today" ? "var(--amber)" : "var(--text-dim)" }}>{t.due}</td>
                     <td>
-                      <button className="btn btn-ghost btn-sm" onClick={() => handleStatusChange(t.id!, "Approved")} disabled={t.status === "Approved"}>Approve</button>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button className="btn btn-ghost btn-sm" onClick={() => handleEditClick(t)}>Edit</button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => handleStatusChange(t.id!, "Approved")} disabled={t.status === "Approved"}>Approve</button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -182,8 +215,8 @@ export default function AdminTasks() {
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div style={{ background: "var(--bg-card)", border: "1px solid var(--border-bright)", borderRadius: 16, width: "100%", maxWidth: 600, maxHeight: "90vh", overflow: "auto", boxShadow: "0 32px 80px rgba(0,0,0,0.6)" }}>
             <div style={{ padding: "24px 28px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div style={{ fontWeight: 700, fontSize: 17 }}>Create New Task</div>
-              <button onClick={() => setShowModal(false)} style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 20, cursor: "pointer" }}>✕</button>
+              <div style={{ fontWeight: 700, fontSize: 17 }}>{editingTask ? "Edit Task" : "Create New Task"}</div>
+              <button onClick={() => { setShowModal(false); setEditingTask(null); setForm({ title: "", channelId: "", type: "Main Edit", editorUid: "", headEditorUid: "", adminPrice: "", editorPay: "", headPay: "", youtubeUrl: "", notes: "", due: "" }); }} style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 20, cursor: "pointer" }}>✕</button>
             </div>
             <form onSubmit={handleCreate} style={{ padding: 28, display: "flex", flexDirection: "column", gap: 18 }}>
               <div className="form-group">
@@ -251,8 +284,8 @@ export default function AdminTasks() {
                 </div>
               </div>
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", paddingTop: 8 }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-                <button type="submit" disabled={saving} className="btn btn-primary">{saving ? "Creating…" : "Create Task & Notify"}</button>
+                <button type="button" className="btn btn-secondary" onClick={() => { setShowModal(false); setEditingTask(null); setForm({ title: "", channelId: "", type: "Main Edit", editorUid: "", headEditorUid: "", adminPrice: "", editorPay: "", headPay: "", youtubeUrl: "", notes: "", due: "" }); }}>Cancel</button>
+                <button type="submit" disabled={saving} className="btn btn-primary">{saving ? "Saving…" : (editingTask ? "Save Changes" : "Create Task & Notify")}</button>
               </div>
             </form>
           </div>

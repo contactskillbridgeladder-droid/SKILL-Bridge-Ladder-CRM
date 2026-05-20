@@ -44,21 +44,23 @@ async function sendFCMPush(token: string, fcmToken: string, payload: { title: st
     body: JSON.stringify({
       message: {
         token: fcmToken,
-        notification: { title: payload.title, body: payload.body },
+        // Data-only message forces the Service Worker to handle the display
+        // This ensures custom actions (like Reply) are attached on Android
         data: { 
+          title: payload.title,
+          body: payload.body,
           url: payload.url || "https://crm.skillbridgeladder.in",
           type: payload.type || "general",
           chatId: payload.chatId || "",
           recipientId: payload.recipientId || ""
         },
+        android: {
+          priority: "high"
+        },
         webpush: {
-          notification: {
-            title: payload.title,
-            body: payload.body,
-            icon: "/logo.png",
-            badge: "/logo.png",
-          },
-          fcm_options: { link: payload.url || "https://crm.skillbridgeladder.in" },
+          headers: {
+            Urgency: "high"
+          }
         },
       },
     }),

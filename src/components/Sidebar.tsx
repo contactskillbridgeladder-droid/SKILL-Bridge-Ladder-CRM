@@ -117,18 +117,30 @@ export default function Sidebar({ role="admin", userName="", uid="" }:
     return () => unsub?.();
   }, [uid]);
 
-  // Push permission prompt (3s after load)
+  // Push permission prompt & auto-registration
   useEffect(() => {
     if (typeof window === "undefined" || !("Notification" in window)) return;
-    if (Notification.permission === "default") {
+    
+    // Auto-register token if already granted (fixes missing tokens on mobile)
+    if (Notification.permission === "granted") {
+      // Small delay to ensure Service Worker is ready
+      setTimeout(() => {
+        handleEnablePush(true);
+      }, 2000);
+    } else if (Notification.permission === "default") {
       const t = setTimeout(() => setShowPushBanner(true), 3000);
       return () => clearTimeout(t);
     }
-  }, []);
+  }, [uid]);
 
-  const handleEnablePush = async () => {
-    setShowPushBanner(false);
-    const perm = await Notification.requestPermission();
+  const handleEnablePush = async (silent = false) => {
+    if (!silent) setShowPushBanner(false);
+    
+    let perm = Notification.permission;
+    if (perm !== "granted") {
+      perm = await Notification.requestPermission();
+    }
+    
     if (perm !== "granted") return;
     try {
       const { getFCMToken } = await import("@/lib/firebase");
@@ -140,7 +152,9 @@ export default function Sidebar({ role="admin", userName="", uid="" }:
           await updateDoc(doc(db, "users", uid), { fcmToken: token });
         }
       }
-    } catch (e) { console.error("FCM token error:", e); }
+    } catch (e) { 
+      console.error("FCM token error:", e); 
+    }
   };
 
   const handleLogout = async () => {
@@ -165,7 +179,7 @@ export default function Sidebar({ role="admin", userName="", uid="" }:
             <div style={{fontSize:11.5,color:"var(--text-muted)",marginTop:2}}>Get instant task &amp; payment alerts</div>
           </div>
           <button onClick={()=>setShowPushBanner(false)} className="btn btn-ghost btn-sm" style={{flexShrink:0}}>Later</button>
-          <button onClick={handleEnablePush} className="btn btn-primary btn-sm" style={{flexShrink:0}}>Enable</button>
+          <button onClick={() => handleEnablePush(false)} className="btn btn-primary btn-sm" style={{flexShrink:0}}>Enable</button>
         </div>
       )}
 
