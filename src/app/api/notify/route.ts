@@ -2,8 +2,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { readFileSync } from "fs";
-import path from "path";
 import { buildNotificationEmail, buildTaskAssignedEmail, buildPaymentEmail, buildNewVideoEmail } from "@/lib/email-templates";
 
 const PROJECT_ID = "skillbridge-crm";
@@ -14,10 +12,17 @@ async function getAccessToken(): Promise<string> {
   const { getGoogleAuthCredentials } = await import("@/lib/firebase-admin");
   const { GoogleAuth } = await import("google-auth-library");
   const key = getGoogleAuthCredentials();
+  if (!key) {
+    throw new Error(
+      "Firebase Admin credentials not configured. " +
+      "Set the FIREBASE_ADMIN_SDK_JSON environment variable in Vercel with your service account JSON."
+    );
+  }
   const auth = new GoogleAuth({ credentials: key, scopes: ["https://www.googleapis.com/auth/cloud-platform"] });
   const client = await auth.getClient();
   const t = await client.getAccessToken();
-  return t.token!;
+  if (!t.token) throw new Error("Failed to obtain Google access token.");
+  return t.token;
 }
 
 // Write Firestore notification document via REST (bypasses gRPC issues)

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import { initFirebase } from "@/lib/firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -37,7 +37,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             sessionId = "sess_" + Math.random().toString(36).substring(2, 12);
             localStorage.setItem("currentSessionId", sessionId);
           }
-          const { setDoc } = require("firebase/firestore");
           setDoc(doc(db, "users", u.uid, "sessions", sessionId), {
             id: sessionId,
             userAgent: navigator.userAgent,

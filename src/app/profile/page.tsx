@@ -3,7 +3,7 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { initFirebase } from "@/lib/firebase";
 import { onAuthStateChanged, signOut, updatePassword, updateEmail } from "firebase/auth";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc, collection, getDocs, query, where } from "firebase/firestore";
 import Sidebar from "@/components/Sidebar";
 import Link from "next/link";
 
@@ -71,7 +71,6 @@ export default function ProfilePage() {
           setWhatsappInput(profileData.whatsappNumber);
 
           // Fetch active sessions
-          const { collection, getDocs, query, where } = require("firebase/firestore");
           const sessQuery = query(collection(db, "users", u.uid, "sessions"), where("status", "==", "active"));
           getDocs(sessQuery).then((sessSnap: any) => {
             const list = sessSnap.docs.map((d: any) => d.data());
