@@ -30,6 +30,7 @@ function LoginForm() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [needsVerification, setNeedsVerification] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const router = useRouter();
 
   // 1. Keep logged in check (redirect automatically on mount/reload if already verified)
@@ -44,12 +45,19 @@ function LoginForm() {
               if (role === "admin") router.push("/admin");
               else if (role === "head_editor") router.push("/head-editor");
               else router.push("/editor");
+            }).catch(() => {
+              setCheckingAuth(false);
             });
           } else {
             setNeedsVerification(true);
+            setCheckingAuth(false);
           }
+        } else {
+          setCheckingAuth(false);
         }
       });
+    }).catch(() => {
+      setCheckingAuth(false);
     });
     return () => unsub?.();
   }, [router]);
@@ -214,6 +222,23 @@ function LoginForm() {
   };
 
   // Render Verification Page State
+  if (checkingAuth) {
+    return (
+      <div className="startup-loader-container">
+        <div className="loader-logo-wrapper">
+          <div className="loader-glow-ring"></div>
+          <div className="loader-glow-ring-inner"></div>
+          <img src="/logo.png" alt="SkillBridge CRM" className="loader-logo" />
+        </div>
+        <h1 className="loader-brand gradient-text">SkillBridge CRM</h1>
+        <p className="loader-status">Verifying secure credentials...</p>
+        <div className="loader-progress-track">
+          <div className="loader-progress-bar"></div>
+        </div>
+      </div>
+    );
+  }
+
   if (needsVerification) {
     return (
       <div className="login-bg">
