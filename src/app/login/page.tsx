@@ -116,8 +116,22 @@ function LoginForm() {
         // Create authentication account
         const cred = await createUserWithEmailAndPassword(auth, email, password);
 
-        // Send Firebase Email Verification
-        await sendEmailVerification(cred.user);
+        // Send High-deliverability verification email via custom API (Resend)
+        try {
+          await fetch("/api/auth/send-verification", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email }),
+          });
+        } catch (emailErr) {
+          console.error("Custom verification email failed:", emailErr);
+          // Fallback to client-side Firebase verification if custom API fails
+          try {
+            await sendEmailVerification(cred.user);
+          } catch (fbErr) {
+            console.error("Firebase fallback verification failed:", fbErr);
+          }
+        }
 
         // Write complete User Profile to Firestore
         await setDoc(doc(db, "users", cred.user.uid), {
@@ -146,7 +160,20 @@ function LoginForm() {
         
         // Force Email Verification
         if (!cred.user.emailVerified) {
-          await sendEmailVerification(cred.user);
+          try {
+            await fetch("/api/auth/send-verification", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email: cred.user.email }),
+            });
+          } catch (emailErr) {
+            console.error("Custom verification email failed:", emailErr);
+            try {
+              await sendEmailVerification(cred.user);
+            } catch (fbErr) {
+              console.error("Firebase fallback verification failed:", fbErr);
+            }
+          }
           setNeedsVerification(true);
           setLoading(false);
           return;
@@ -199,9 +226,22 @@ function LoginForm() {
     setMessage("");
     try {
       const { auth } = await initFirebase();
-      if (auth.currentUser) {
-        await sendEmailVerification(auth.currentUser);
-        setMessage("Verification email has been resent successfully!");
+      if (auth.currentUser && auth.currentUser.email) {
+        try {
+          const res = await fetch("/api/auth/send-verification", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: auth.currentUser.email }),
+          });
+          if (res.ok) {
+            setMessage("Verification email has been resent successfully!");
+          } else {
+            throw new Error("Failed to send via custom mailer");
+          }
+        } catch {
+          await sendEmailVerification(auth.currentUser);
+          setMessage("Verification email has been resent successfully!");
+        }
       }
     } catch (err: any) {
       setError(err.message);
