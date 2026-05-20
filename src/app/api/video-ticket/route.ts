@@ -110,7 +110,7 @@ export async function POST(request: Request) {
     const {
       channelId, videoTitle, youtubeUrl = "", type = "Main Edit",
       notes = "", due = "", adminPrice = 0, editorPay = 0, headPay = 0,
-      headEditorUid, editorUid,
+      headEditorUid, editorUid, editorName
     } = body;
 
     if (!channelId || !videoTitle) {
@@ -132,7 +132,7 @@ export async function POST(request: Request) {
       channelId:      { stringValue: channelId },
       type:           { stringValue: type },
       editorUid:      editorUid ? { stringValue: editorUid } : { nullValue: null },
-      editorName:     { stringValue: "Unassigned" },
+      editorName:     { stringValue: editorName || "Unassigned" },
       headEditorUid:  headEditorUid ? { stringValue: headEditorUid } : { nullValue: null },
       status:         { stringValue: "Open" },
       adminPrice:     { doubleValue: adminPrice },

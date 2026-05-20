@@ -64,15 +64,17 @@ export default function AdminTasks() {
     e.preventDefault();
     setSaving(true);
     try {
+      const assignedEditor = users.find(u => u.uid === form.editorUid);
+      const editorName = assignedEditor?.name || "Unassigned";
+
       if (editingTask) {
         // Find assigned editor names for UI
-        const assignedEditor = users.find(u => u.uid === form.editorUid);
         const adminEarning = parseFloat(form.adminPrice) - parseFloat(form.editorPay) - parseFloat(form.headPay);
 
         await updateTask(editingTask.id!, {
           title: form.title, channelId: form.channelId, type: form.type,
           editorUid: form.editorUid || null, headEditorUid: form.headEditorUid || null,
-          editorName: assignedEditor?.name || "Unassigned",
+          editorName,
           adminPrice: parseFloat(form.adminPrice) || 0,
           editorPay: parseFloat(form.editorPay) || 0,
           headPay: parseFloat(form.headPay) || 0,
@@ -96,6 +98,7 @@ export default function AdminTasks() {
           headPay: parseFloat(form.headPay) || 0,
           headEditorUid: form.headEditorUid || null,
           editorUid: form.editorUid || null,
+          editorName,
         }),
       });
         const data = await res.json();
