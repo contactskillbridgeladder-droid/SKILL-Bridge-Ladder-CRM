@@ -18,22 +18,16 @@ let cachedSecrets: ServerSecrets | null = null;
 export async function getServerSecrets(): Promise<ServerSecrets> {
   if (cachedSecrets) return cachedSecrets;
 
-  // Get the Firebase API key (used as auth token for the secrets endpoint)
-  let authKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "";
-  if (!authKey) {
-    try {
-      const cfgRes = await fetch(`${WORKER_URL}/config`);
-      if (cfgRes.ok) {
-        const cfg = await cfgRes.json();
-        authKey = (cfg as any).apiKey || "";
-      }
-    } catch {}
+  // Use dedicated auth secret (NOT the public Firebase API key)
+  const authSecret = process.env.WORKER_AUTH_SECRET;
+  if (!authSecret) {
+    throw new Error(
+      "WORKER_AUTH_SECRET not set. Add it to .env.local and Vercel env vars."
+    );
   }
 
-  if (!authKey) throw new Error("Cannot authenticate to fetch server secrets — no Firebase API key available.");
-
   const res = await fetch(`${WORKER_URL}/config/secrets`, {
-    headers: { Authorization: `Bearer ${authKey}` },
+    headers: { Authorization: `Bearer ${authSecret}` },
   });
   if (!res.ok) throw new Error(`Failed to fetch server secrets: ${res.status}`);
 

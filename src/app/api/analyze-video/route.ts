@@ -22,33 +22,14 @@ export async function POST(req: Request) {
     }
 
     // 2. Call Gemini API if available, or generate premium mock analysis
-    let apiKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    let apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       try {
-        // NOTE: This worker URL is environment-sensitive. Secrets like the Gemini API Key are
-        // fetched dynamically from the Cloudflare Worker environment variables/secrets.
-        const WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL || "https://skillbridge-crm-env.contact-skillbridgeladder.workers.dev";
-        let authKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "";
-        if (!authKey) {
-          const cfgPublicRes = await fetch(`${WORKER_URL}/config`);
-          if (cfgPublicRes.ok) {
-            const cfgPublic = await cfgPublicRes.json();
-            authKey = cfgPublic.apiKey;
-          }
-        }
-        if (authKey) {
-          const cfgRes = await fetch(`${WORKER_URL}/config/secrets`, {
-            headers: {
-              "Authorization": `Bearer ${authKey}`
-            }
-          });
-          if (cfgRes.ok) {
-            const cfg = await cfgRes.json();
-            apiKey = cfg.geminiApiKey;
-          }
-        }
+        const { getServerSecrets } = await import("@/lib/firebase-admin");
+        const secrets = await getServerSecrets();
+        apiKey = secrets.geminiApiKey;
       } catch (err) {
-        console.error("Failed to fetch gemini api key from cloudflare worker secrets endpoint:", err);
+        console.error("Failed to fetch Gemini API key:", err);
       }
     }
 

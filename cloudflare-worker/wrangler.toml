@@ -14,5 +14,9 @@ FIREBASE_MESSAGING_SENDER_ID = "141902383537"
 FIREBASE_APP_ID = "1:141902383537:web:5269fd7bb248d2d02e5590"
 FIREBASE_MEASUREMENT_ID = "G-8Y6C6ZWBZ9"
 FIREBASE_VAPID_KEY = "BKosfe_vqNM7uJqLqC3Se9jv5mS9FeQLs5UGM5KZpgh7Oc-TnJyP-nCqlpov1ifN5RvNRzwuHTH993ZyJSbR1Sk"
-# RESEND_API_KEY and GEMINI_API_KEY should be set using: npx wrangler secret put <KEY>
+FIREBASE_CLIENT_EMAIL = "firebase-adminsdk-fbsvc@skillbridge-crm.iam.gserviceaccount.com"
 
+# These MUST be set as encrypted secrets (not plain vars):
+#   npx wrangler secret put RESEND_API_KEY
+#   npx wrangler secret put GEMINI_API_KEY
+#   npx wrangler secret put FIREBASE_PRIVATE_KEY

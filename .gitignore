@@ -41,7 +41,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-skillbridge-crm-firebase-adminsdk-fbsvc-3d64026130.json
+skillbridge-crm-firebase-adminsdk-*.json
 
 /.firebase/
 .vercel
