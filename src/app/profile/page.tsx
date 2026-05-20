@@ -121,6 +121,15 @@ export default function ProfilePage() {
       await updateDoc(doc(db, "users", user.uid, "sessions", sessId), {
         status: "terminated"
       });
+      
+      if (sessId === currentSessionId) {
+        const { auth } = await initFirebase();
+        await signOut(auth);
+        localStorage.removeItem("currentSessionId");
+        router.push("/login?error=session_terminated");
+        return;
+      }
+
       setSessions(prev => prev.filter(s => s.id !== sessId));
       setMessage("Session terminated successfully.");
     } catch (err: any) {
@@ -150,7 +159,14 @@ export default function ProfilePage() {
 
   const handleLogout = async () => {
     try {
-      const { auth } = await initFirebase();
+      const { db, auth } = await initFirebase();
+      if (auth.currentUser && currentSessionId) {
+        const { doc, updateDoc } = await import("firebase/firestore");
+        await updateDoc(doc(db, "users", auth.currentUser.uid, "sessions", currentSessionId), {
+          status: "terminated"
+        }).catch(console.error);
+      }
+      localStorage.removeItem("currentSessionId");
       await signOut(auth);
       router.push("/login");
     } catch (err: any) {

@@ -31,37 +31,19 @@ export default function HeadEditorLayout({ children }: { children: React.ReactNo
             return;
           }
 
-          // Verify session
-          const sessionId = localStorage.getItem("currentSessionId");
+          // Record session history (non-blocking)
+          let sessionId = localStorage.getItem("currentSessionId");
           if (!sessionId) {
-            const newSessId = "sess_" + Math.random().toString(36).substring(2, 12);
-            localStorage.setItem("currentSessionId", newSessId);
-            const { setDoc } = require("firebase/firestore");
-            setDoc(doc(db, "users", u.uid, "sessions", newSessId), {
-              id: newSessId,
-              userAgent: navigator.userAgent,
-              loginTime: new Date(),
-              lastActive: new Date(),
-              status: "active"
-            }).catch(console.error);
-          } else {
-            getDoc(doc(db, "users", u.uid, "sessions", sessionId)).then((sessSnap: any) => {
-              if (!sessSnap.exists() || sessSnap.data().status !== "active") {
-                signOut(auth).then(() => {
-                  router.push("/login?error=session_terminated");
-                });
-              } else {
-                const { updateDoc } = require("firebase/firestore");
-                updateDoc(doc(db, "users", u.uid, "sessions", sessionId), {
-                  lastActive: new Date()
-                }).catch(console.error);
-              }
-            }).catch(() => {
-              signOut(auth).then(() => {
-                router.push("/login?error=session_terminated");
-              });
-            });
+            sessionId = "sess_" + Math.random().toString(36).substring(2, 12);
+            localStorage.setItem("currentSessionId", sessionId);
           }
+          const { setDoc } = require("firebase/firestore");
+          setDoc(doc(db, "users", u.uid, "sessions", sessionId), {
+            id: sessionId,
+            userAgent: navigator.userAgent,
+            lastActive: new Date(),
+            status: "active"
+          }, { merge: true }).catch(console.error);
 
           setUser({ name: d?.name || u.email || "", role: d?.role || "head_editor", uid: u.uid });
         });
