@@ -18,14 +18,18 @@ export interface Env {
 // ── Allowed origins (strict whitelist) ───────────────────────────────────────
 const ALLOWED_ORIGINS = [
   "https://crm.skillbridgeladder.in",
-  "https://skill-bridge-ladder-crm.vercel.app",
   "http://localhost:3000",
+  "http://localhost:3001",
   "http://127.0.0.1:3000",
 ];
 
 function isAllowedOrigin(origin: string | null): boolean {
   if (!origin) return false;
-  return ALLOWED_ORIGINS.some(o => origin === o || origin.startsWith(o));
+  // Exact match for known origins
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  // Allow all Vercel deployments (preview + production)
+  if (origin.endsWith(".vercel.app") || origin.endsWith(".skillbridgeladder.in")) return true;
+  return false;
 }
 
 // ── Security headers applied to EVERY response ──────────────────────────────
@@ -100,11 +104,14 @@ export default {
     // GET /config — Public Firebase client config (browser-safe, origin-locked)
     // ═══════════════════════════════════════════════════════════════════════════
     if (request.method === "GET" && url.pathname === "/config") {
-      // Block direct browser URL visits (no Origin = someone typing the URL)
+      // /config serves only PUBLIC client-side Firebase config — allow broad access
+      // but block random crawlers (must have valid Origin or Referer)
       const referer = request.headers.get("Referer") || "";
       const isValidRequest =
         isAllowedOrigin(origin) ||
-        ALLOWED_ORIGINS.some(o => referer.startsWith(o));
+        referer.includes("skillbridgeladder.in") ||
+        referer.includes("vercel.app") ||
+        referer.includes("localhost");
 
       if (!isValidRequest) {
         return new Response(JSON.stringify({ error: "Access denied." }), {
