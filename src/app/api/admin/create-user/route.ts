@@ -122,18 +122,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "User registered in Auth, but failed to write Firestore profile document." }, { status: 500 });
     }
 
-    // Log the successful administrator activity
-    const adminUser = {
-      uid: adminUid,
-      name: adminData.fields?.name?.stringValue || "Admin",
-      email: adminData.fields?.email?.stringValue || ""
-    };
-    const { logActivity: _log } = await import("@/lib/firestore");
-    await _log(
-      "Manual Member Registration",
-      `Admin manually registered user ${email} under the role: ${role}`,
-      adminUser
-    );
+    // Log the successful administrator activity via REST (client-side SDK cannot run in Node.js)
+    try {
+      const adminName = adminData.fields?.name?.stringValue || "Admin";
+      const adminEmail = adminData.fields?.email?.stringValue || "";
+      await fetch(`${FIRESTORE_URL}/audit_logs`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fields: {
+            action: { stringValue: "Manual Member Registration" },
+            details: { stringValue: `Admin manually registered user ${email} under the role: ${role}` },
+            performedByUid: { stringValue: adminUid },
+            performedByName: { stringValue: adminName },
+            performedByEmail: { stringValue: adminEmail },
+            createdAt: { timestampValue: new Date().toISOString() }
+          }
+        })
+      });
+    } catch (auditErr) {
+      console.error("Audit log write failed:", auditErr);
+    }
 
     return NextResponse.json({ 
       success: true, 

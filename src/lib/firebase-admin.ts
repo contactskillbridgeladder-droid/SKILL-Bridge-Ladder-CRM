@@ -73,7 +73,11 @@ export async function getAccessToken(): Promise<string> {
   const { GoogleAuth } = await import("google-auth-library");
   const auth = new GoogleAuth({
     credentials: { client_email, private_key } as any,
-    scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+    scopes: [
+      "https://www.googleapis.com/auth/cloud-platform",
+      "https://www.googleapis.com/auth/firebase",
+      "https://www.googleapis.com/auth/firebase.database",
+    ],
   });
   const client = await auth.getClient();
   const t = await client.getAccessToken();

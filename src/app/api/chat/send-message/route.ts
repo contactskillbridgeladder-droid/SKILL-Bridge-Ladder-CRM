@@ -2,26 +2,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
-import { getAccessToken, getServerSecrets } from "@/lib/firebase-admin";
+import { getAccessToken } from "@/lib/firebase-admin";
+import { scanMessage } from "@/lib/ai-scanner";
 
 const PROJECT_ID = "skillbridge-crm";
 const FIRESTORE_URL = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
 const RTDB_URL = "https://skillbridge-crm-default-rtdb.firebaseio.com";
-
-async function getGeminiApiKey(): Promise<string | null> {
-  let apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    try {
-      const secrets = await getServerSecrets();
-      apiKey = secrets.geminiApiKey;
-    } catch (err) {
-      console.error("Failed to fetch Gemini API key:", err);
-    }
-  }
-  return apiKey || null;
-}
 
 // ── Google Identity Provider Token Validation ────────────────────────────────
 async function verifyIdToken(idToken: string, apiKey: string): Promise<string> {
@@ -150,86 +136,18 @@ export async function POST(request: Request) {
 
     let processedText = text;
     let wasModerated = false;
+    let violations: string[] = [];
 
-    // 6. AI Content Checker (Only for client/editor if scanner is active)
+    // ══════════════════════════════════════════════════════════════════════════
+    // 6. AI SAFETY SCANNER — 100-Rule Local Engine (Zero API calls)
+    // ══════════════════════════════════════════════════════════════════════════
     if (!aiScannerDisabled && (senderRole === "client" || senderRole === "editor") && type === "text") {
-      // Local robust Regex filtering (Emails, Phone numbers, Non-Google Drive links)
-      const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/gi;
-      const phoneRegex = /(?:\+?\d{1,3}[- ]?)?\(?\d{3}\)?[- ]?\d{3}[- ]?\d{4}/g;
-      const linkRegex = /https?:\/\/(?!drive\.google\.com)[a-zA-Z0-9-._~:\/?#\[\]@!$&'()*+,;=]+/gi;
-      
-      // Payment & Billing terms blocking Regex
-      const paymentRegex = /\b(payment|payments|pay|invoice|invoices|money|bank|transfer|upi|paypal|stripe|gpay|phonepe|crypto|bitcoin|usdt|fees|cost|charge|dollars|rupees|usd|inr|wallet|card|credit card|debit card)\b/gi;
+      const result = scanMessage(text);
 
-      let localCensored = text;
-      let localTriggered = false;
-
-      if (emailRegex.test(text)) {
-        localCensored = localCensored.replace(emailRegex, "[Blocked Email]");
-        localTriggered = true;
-      }
-      if (phoneRegex.test(text)) {
-        localCensored = localCensored.replace(phoneRegex, "[Blocked Phone Number]");
-        localTriggered = true;
-      }
-      if (linkRegex.test(text)) {
-        localCensored = localCensored.replace(linkRegex, "[Blocked Link - Only Google Drive Allowed]");
-        localTriggered = true;
-      }
-      if (paymentRegex.test(text)) {
-        localCensored = localCensored.replace(paymentRegex, "[Blocked Payment/Billing Reference]");
-        localTriggered = true;
-      }
-
-      if (localTriggered) {
-        processedText = localCensored;
+      if (result.wasModerated) {
+        processedText = result.censored;
         wasModerated = true;
-      }
-
-      // Secondary Deep Content Scanning via Gemini 2.5 Flash
-      const apiKeyVal = await getGeminiApiKey();
-      if (apiKeyVal) {
-        try {
-          const systemInstruction = `You are a security chat scanner. Inspect the message text between a Client and an Editor.
-Verify if it contains phone numbers, email addresses, external links, social media handles, payment details, billing links, or spellings that try to bypass rules (e.g. "my mail is name at domain dot com" or spelling numbers "nine eight...").
-Strict Rule 1: ONLY allow Google Drive links (drive.google.com). Block ALL other links.
-Strict Rule 2: Block any discussion or terms about direct payments, invoicing, paypal, stripe, transfers, crypto, or banking transactions.
-Provide a clean JSON response. If contact/payment details or unapproved links are present, set isBlocked to true and provide the censoredText replacing contact/payment/links with "[Blocked Info]". If safe, set isBlocked to false.
-Return ONLY this JSON schema:
-{"isBlocked": boolean, "censoredText": "string"}
-Do not include any markdown backticks or block formatting. Output must be raw JSON.`;
-
-          const geminiRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKeyVal}`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                contents: [{ role: "user", parts: [{ text }] }],
-                systemInstruction: { parts: [{ text: systemInstruction }] }
-              })
-            }
-          );
-
-          if (geminiRes.ok) {
-            const geminiData = await geminiRes.json();
-            const reply = geminiData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-            
-            try {
-              // Parse out JSON if Gemini returns markdown wrappers
-              const jsonStr = reply.replace(/```json/g, "").replace(/```/g, "").trim();
-              const parsed = JSON.parse(jsonStr);
-              if (parsed.isBlocked) {
-                processedText = parsed.censoredText;
-                wasModerated = true;
-              }
-            } catch (jsonErr) {
-              console.error("Gemini output parse error:", jsonErr, "Raw reply:", reply);
-            }
-          }
-        } catch (geminiErr) {
-          console.error("Gemini Scanner failed, using Regex safety fallbacks:", geminiErr);
-        }
+        violations = result.violations;
       }
 
       // 7. Log blocked attempt & increment count in Firestore
@@ -245,14 +163,25 @@ Do not include any markdown backticks or block formatting. Output must be raw JS
           })
         });
 
-        // Audit Log
-        const adminUser = { uid: "system", name: "AI Safety Agent", email: "security@skillbridge.in" };
-        const { logActivity: _log } = await import("@/lib/firestore");
-        await _log(
-          "AI Blocked Information",
-          `Censored message from ${senderRole === "client" ? clientEmail : "Editor"} on chat bridge_${clientId}. Censored details: "${text.substring(0, 100)}..."`,
-          adminUser
-        );
+        // Audit Log — direct Firestore REST call
+        try {
+          await fetch(`${FIRESTORE_URL}/audit_logs`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              fields: {
+                action: { stringValue: "AI Scanner Blocked Information" },
+                details: { stringValue: `[Rules: ${violations.join(", ")}] Censored message from ${senderRole === "client" ? clientEmail : "Editor"} on bridge_${clientId}. Original: "${text.substring(0, 150)}..."` },
+                performedByUid: { stringValue: "system" },
+                performedByName: { stringValue: "AI Safety Scanner" },
+                performedByEmail: { stringValue: "security@skillbridge.in" },
+                createdAt: { timestampValue: new Date().toISOString() }
+              }
+            })
+          });
+        } catch (auditErr) {
+          console.error("Audit log write failed:", auditErr);
+        }
       }
     }
 
@@ -267,14 +196,15 @@ Do not include any markdown backticks or block formatting. Output must be raw JS
       status: "sent"
     };
 
-    const msgRes = await fetch(`${RTDB_URL}/chats/bridge_${clientId}/messages.json`, {
+    const msgRes = await fetch(`${RTDB_URL}/chats/bridge_${clientId}/messages.json?access_token=${token}`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(msgPayload)
     });
 
     if (!msgRes.ok) {
-      return NextResponse.json({ error: "Failed to write to RTDB" }, { status: 500 });
+      const errText = await msgRes.text();
+      throw new Error(`Failed to write to RTDB: ${msgRes.status} ${errText}`);
     }
 
     // 9. Update Metadata & Unread Count for Receiver
@@ -291,9 +221,11 @@ Do not include any markdown backticks or block formatting. Output must be raw JS
     if (type === "video") displayMsg = "🎥 Video Submission";
 
     // Fetch unread count for recipient
-    const unreadRes = await fetch(`${RTDB_URL}/chats/bridge_${clientId}/metadata/unreadCount/${recipientId}.json`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const unreadRes = await fetch(`${RTDB_URL}/chats/bridge_${clientId}/metadata/unreadCount/${recipientId}.json?access_token=${token}`);
+    if (!unreadRes.ok) {
+      const errText = await unreadRes.text();
+      throw new Error(`Failed to fetch unread count from RTDB: ${unreadRes.status} ${errText}`);
+    }
     const currentUnread = (await unreadRes.json()) || 0;
 
     const metaUpdate: Record<string, any> = {
@@ -305,11 +237,15 @@ Do not include any markdown backticks or block formatting. Output must be raw JS
       [`unreadCount/${recipientId}`]: currentUnread + 1
     };
 
-    await fetch(`${RTDB_URL}/chats/bridge_${clientId}/metadata.json`, {
+    const patchRes = await fetch(`${RTDB_URL}/chats/bridge_${clientId}/metadata.json?access_token=${token}`, {
       method: "PATCH",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(metaUpdate)
     });
+    if (!patchRes.ok) {
+      const errText = await patchRes.text();
+      throw new Error(`Failed to patch metadata in RTDB: ${patchRes.status} ${errText}`);
+    }
 
     // 10. Trigger Push Notification to recipient
     if (recipientId) {
@@ -348,11 +284,12 @@ Do not include any markdown backticks or block formatting. Output must be raw JS
     return NextResponse.json({ success: true, message: msgPayload });
 
   } catch (error: any) {
-    console.error("send-message api error:", error);
-    try {
-      const logMsg = `[${new Date().toISOString()}] send-message error: ${error.stack || error.message}\n`;
-      fs.appendFileSync(path.join(process.cwd(), "api_error.log"), logMsg);
-    } catch (e) {}
+    try { 
+      const fs = require('fs');
+      const logPath = require('path').join(process.cwd(), 'debug_error.log');
+      fs.appendFileSync(logPath, `\n[${new Date().toISOString()}] ERROR:\n` + String(error?.stack || error?.message || error) + `\n`);
+    } catch(e){}
+    console.error("send-message api error:", error?.stack || error?.message || error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
