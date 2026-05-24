@@ -26,6 +26,28 @@ async function getGeminiApiKey(): Promise<string | null> {
   return apiKey || null;
 }
 
+// ── Google Identity Provider Token Validation ────────────────────────────────
+async function verifyIdToken(idToken: string, apiKey: string): Promise<string> {
+  const res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ idToken })
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error("[Pentest Firewall] verifyIdToken lookup failed:", errText);
+    throw new Error("Invalid or expired session token.");
+  }
+
+  const data = await res.json();
+  const uid = data.users?.[0]?.localId;
+  if (!uid) {
+    throw new Error("User profile not found in identity provider.");
+  }
+  return uid;
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -35,9 +57,66 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing required fields: clientId, senderId, senderRole" }, { status: 400 });
     }
 
+    // Resolve Firebase Web API Key for ID token verification
+    let apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+    if (!apiKey) {
+      const WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL || "https://skillbridge-crm-env.contact-skillbridgeladder.workers.dev";
+      try {
+        const configRes = await fetch(`${WORKER_URL}/config`);
+        if (configRes.ok) {
+          const config = await configRes.json();
+          apiKey = config.apiKey;
+        }
+      } catch (err) {
+        console.error("Failed to fetch worker config inside send-message:", err);
+      }
+    }
+
+    if (!apiKey) {
+      return NextResponse.json({ error: "Identity Platform API Key not resolved." }, { status: 500 });
+    }
+
+    // 1. Authenticate the Caller via ID Token (Pentest Hardening)
+    const authHeader = request.headers.get("Authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Missing or invalid authorization token." }, { status: 401 });
+    }
+
+    const idToken = authHeader.substring(7);
+    let authenticatedUid = "";
+    try {
+      authenticatedUid = await verifyIdToken(idToken, apiKey);
+    } catch (err: any) {
+      return NextResponse.json({ error: err.message }, { status: 401 });
+    }
+
     const token = await getAccessToken();
 
-    // 1. Fetch Client Profile from Firestore to retrieve Assigned Editor and AI settings
+    // 2. Fetch the authenticated user's document from Firestore to verify role (Security RBAC)
+    const callerRes = await fetch(`${FIRESTORE_URL}/users/${authenticatedUid}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (!callerRes.ok) {
+      return NextResponse.json({ error: "Authenticated user profile not found." }, { status: 403 });
+    }
+
+    const callerData = await callerRes.json();
+    const callerRole = callerData.fields?.role?.stringValue || "";
+
+    // 3. Prevent Client-Side Masquerading (Pentest Hardening - Admins & Head Editors can bypass to use proxy roles)
+    const isPrivileged = callerRole === "admin" || callerRole === "head_editor";
+    if (!isPrivileged) {
+      if (authenticatedUid !== senderId) {
+        return NextResponse.json({ error: "Impersonation Blocked: senderId does not match authenticated user." }, { status: 403 });
+      }
+
+      if (callerRole !== senderRole) {
+        return NextResponse.json({ error: "Impersonation Blocked: senderRole does not match authenticated role." }, { status: 403 });
+      }
+    }
+
+    // 4. Fetch Client Profile from Firestore to retrieve Assigned Editor and AI settings
     const clientRes = await fetch(`${FIRESTORE_URL}/users/${clientId}`, {
       headers: { Authorization: `Bearer ${token}` }
     });
@@ -53,17 +132,37 @@ export async function POST(request: Request) {
     const clientEmail = clientData.fields?.email?.stringValue || "";
     const clientName = clientData.fields?.name?.stringValue || clientEmail;
 
+    // 5. Validate Context-Specific Authorization Rules
+    if (!isPrivileged) {
+      if (senderRole === "client") {
+        if (senderId !== clientId) {
+          return NextResponse.json({ error: "Access Denied: Clients can only post to their own bridge." }, { status: 403 });
+        }
+      } else if (senderRole === "editor") {
+        if (assignedEditorUid !== senderId) {
+          return NextResponse.json({ error: "Access Denied: You are not the assigned editor for this client." }, { status: 403 });
+        }
+      } else if (senderRole === "head_editor") {
+        // Allow Head Editors globally in general bridge operations
+      } else if (senderRole === "admin") {
+        // Admins are globally authorized
+      } else {
+        return NextResponse.json({ error: "Access Denied: Invalid role." }, { status: 403 });
+      }
+    }
+
     let processedText = text;
     let wasModerated = false;
 
-    // 2. AI Content Checker (Only for client/editor if scanner is active)
+    // 6. AI Content Checker (Only for client/editor if scanner is active)
     if (!aiScannerDisabled && (senderRole === "client" || senderRole === "editor") && type === "text") {
       // Local robust Regex filtering (Emails, Phone numbers, Non-Google Drive links)
       const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/gi;
       const phoneRegex = /(?:\+?\d{1,3}[- ]?)?\(?\d{3}\)?[- ]?\d{3}[- ]?\d{4}/g;
       const linkRegex = /https?:\/\/(?!drive\.google\.com)[a-zA-Z0-9-._~:\/?#\[\]@!$&'()*+,;=]+/gi;
-      // Common written contact loops (spelled out numbers or direct requests)
-      const contactSpellingRegex = /\b(nine|eight|seven|six|five|four|three|two|one|zero|dot|at)\b/gi;
+      
+      // Payment & Billing terms blocking Regex
+      const paymentRegex = /\b(payment|payments|pay|invoice|invoices|money|bank|transfer|upi|paypal|stripe|gpay|phonepe|crypto|bitcoin|usdt|fees|cost|charge|dollars|rupees|usd|inr|wallet|card|credit card|debit card)\b/gi;
 
       let localCensored = text;
       let localTriggered = false;
@@ -80,6 +179,10 @@ export async function POST(request: Request) {
         localCensored = localCensored.replace(linkRegex, "[Blocked Link - Only Google Drive Allowed]");
         localTriggered = true;
       }
+      if (paymentRegex.test(text)) {
+        localCensored = localCensored.replace(paymentRegex, "[Blocked Payment/Billing Reference]");
+        localTriggered = true;
+      }
 
       if (localTriggered) {
         processedText = localCensored;
@@ -87,19 +190,20 @@ export async function POST(request: Request) {
       }
 
       // Secondary Deep Content Scanning via Gemini 2.5 Flash
-      const apiKey = await getGeminiApiKey();
-      if (apiKey) {
+      const apiKeyVal = await getGeminiApiKey();
+      if (apiKeyVal) {
         try {
           const systemInstruction = `You are a security chat scanner. Inspect the message text between a Client and an Editor.
-Verify if it contains phone numbers, email addresses, external links, social media handles, or spellings that try to bypass rules (e.g. "my mail is name at domain dot com" or spelling numbers "nine eight...").
-Strict Rule: ONLY allow Google Drive links (drive.google.com). Block ALL other links.
-Provide a clean JSON response. If contact details or unapproved links are present, set isBlocked to true and provide the censoredText replacing contact/links with "[Blocked Info]". If safe, set isBlocked to false.
+Verify if it contains phone numbers, email addresses, external links, social media handles, payment details, billing links, or spellings that try to bypass rules (e.g. "my mail is name at domain dot com" or spelling numbers "nine eight...").
+Strict Rule 1: ONLY allow Google Drive links (drive.google.com). Block ALL other links.
+Strict Rule 2: Block any discussion or terms about direct payments, invoicing, paypal, stripe, transfers, crypto, or banking transactions.
+Provide a clean JSON response. If contact/payment details or unapproved links are present, set isBlocked to true and provide the censoredText replacing contact/payment/links with "[Blocked Info]". If safe, set isBlocked to false.
 Return ONLY this JSON schema:
 {"isBlocked": boolean, "censoredText": "string"}
 Do not include any markdown backticks or block formatting. Output must be raw JSON.`;
 
           const geminiRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKeyVal}`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -131,7 +235,7 @@ Do not include any markdown backticks or block formatting. Output must be raw JS
         }
       }
 
-      // 3. Log blocked attempt & increment count in Firestore
+      // 7. Log blocked attempt & increment count in Firestore
       if (wasModerated) {
         blockedCount += 1;
         await fetch(`${FIRESTORE_URL}/users/${clientId}?updateMask.fieldPaths=blockedMessagesCount`, {
@@ -155,7 +259,7 @@ Do not include any markdown backticks or block formatting. Output must be raw JS
       }
     }
 
-    // 4. Save message to RTDB
+    // 8. Save message to RTDB
     const msgPayload = {
       senderId,
       senderRole,
@@ -176,7 +280,7 @@ Do not include any markdown backticks or block formatting. Output must be raw JS
       return NextResponse.json({ error: "Failed to write to RTDB" }, { status: 500 });
     }
 
-    // 5. Update Metadata & Unread Count for Receiver
+    // 9. Update Metadata & Unread Count for Receiver
     let recipientId = "";
     if (senderRole === "client") {
       recipientId = assignedEditorUid || "admin"; // Forward to editor or fallback to admin
@@ -210,7 +314,7 @@ Do not include any markdown backticks or block formatting. Output must be raw JS
       body: JSON.stringify(metaUpdate)
     });
 
-    // 6. Trigger Push Notification to recipient
+    // 10. Trigger Push Notification to recipient
     if (recipientId) {
       try {
         let title = "New Message";

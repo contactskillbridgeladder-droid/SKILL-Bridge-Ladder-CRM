@@ -48,6 +48,7 @@ export default function AdminMessagesPage() {
   const [isEditingInfo, setIsEditingInfo] = useState(false);
   const [sending, setSending] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [proxyRole, setProxyRole] = useState<"admin" | "editor" | "client">("admin");
 
   // Audio Recording States (Admin Interventions)
   const [isRecording, setIsRecording] = useState(false);
@@ -147,6 +148,8 @@ export default function AdminMessagesPage() {
   useEffect(() => {
     if (!currentUser || !activeChat || !rtdb) return;
 
+    setProxyRole("admin"); // Reset proxy role on chat change
+
     const isClientChat = activeChat.role === "client";
     const chatId = isClientChat ? `bridge_${activeChat.uid}` : [currentUser.uid, activeChat.uid].sort().join("_");
 
@@ -222,22 +225,44 @@ export default function AdminMessagesPage() {
   const triggerSendMessage = async (mediaUrl: string, type: "photo" | "audio" | "video") => {
     if (!activeChat || !currentUser) return;
     try {
+      const { auth } = await initFirebase();
+      const token = await auth.currentUser?.getIdToken();
+
+      let resolvedSenderId = currentUser.uid;
+      let resolvedSenderRole = "admin";
+
+      if (activeChat.role === "client") {
+        if (proxyRole === "client") {
+          resolvedSenderId = activeChat.uid;
+          resolvedSenderRole = "client";
+        } else if (proxyRole === "editor") {
+          resolvedSenderId = activeChat.assignedEditorUid || currentUser.uid;
+          resolvedSenderRole = "editor";
+        }
+      }
+
       const res = await fetch("/api/chat/send-message", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({
           clientId: activeChat.uid,
-          senderId: currentUser.uid,
-          senderRole: "admin",
+          senderId: resolvedSenderId,
+          senderRole: resolvedSenderRole,
           text: "",
           type,
           mediaData: mediaUrl
         })
       });
 
-      if (!res.ok) throw new Error("API write failed");
-    } catch (err) {
-      alert("Failed to deliver media draft.");
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "API write failed");
+      }
+    } catch (err: any) {
+      alert("Failed to deliver media draft: " + err.message);
     }
   };
 
@@ -255,21 +280,41 @@ export default function AdminMessagesPage() {
       set(ref(rtdb, `chats/bridge_${activeChat.uid}/typing/${currentUser.uid}`), false);
 
       try {
+        const { auth } = await initFirebase();
+        const token = await auth.currentUser?.getIdToken();
+
+        let resolvedSenderId = currentUser.uid;
+        let resolvedSenderRole = "admin";
+
+        if (proxyRole === "client") {
+          resolvedSenderId = activeChat.uid;
+          resolvedSenderRole = "client";
+        } else if (proxyRole === "editor") {
+          resolvedSenderId = activeChat.assignedEditorUid || currentUser.uid;
+          resolvedSenderRole = "editor";
+        }
+
         const res = await fetch("/api/chat/send-message", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
           body: JSON.stringify({
             clientId: activeChat.uid,
-            senderId: currentUser.uid,
-            senderRole: "admin",
+            senderId: resolvedSenderId,
+            senderRole: resolvedSenderRole,
             text: textToSend,
             type: "text"
           })
         });
 
-        if (!res.ok) throw new Error("API write failed");
-      } catch (err) {
-        alert("Failed to deliver message via security filter.");
+        if (!res.ok) {
+          const errorData = await res.json();
+          throw new Error(errorData.error || "API write failed");
+        }
+      } catch (err: any) {
+        alert("Failed to deliver message via security filter: " + err.message);
         setInputText(textToSend);
       } finally {
         setSending(false);
@@ -730,12 +775,31 @@ export default function AdminMessagesPage() {
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {messages.map((m, idx) => {
-                      const isMe = m.senderId === currentUser.uid;
+                      let isMe = m.senderId === currentUser.uid;
                       const showDateHeader = idx === 0 || formatDate(m.timestamp) !== formatDate(messages[idx - 1]?.timestamp);
 
-                      const senderTag = activeChat.role === "client" && !isMe 
-                        ? (m.senderRole === "client" ? " [Client]" : " [Editor Proxy]") 
-                        : "";
+                      let senderTag = "";
+
+                      if (activeChat.role === "client") {
+                        if (proxyRole === "admin") {
+                          isMe = m.senderRole === "admin";
+                          if (!isMe) {
+                            senderTag = m.senderRole === "client" ? " [Client]" : " [Editor Proxy]";
+                          }
+                        } else if (proxyRole === "editor") {
+                          isMe = m.senderRole === "editor";
+                          if (!isMe) {
+                            senderTag = m.senderRole === "client" ? " [Client]" : " [Admin/Manager]";
+                          }
+                        } else if (proxyRole === "client") {
+                          isMe = m.senderRole === "client";
+                          if (!isMe) {
+                            senderTag = " [Agency Manager]";
+                          }
+                        }
+                      } else {
+                        isMe = m.senderId === currentUser.uid;
+                      }
 
                       return (
                         <div key={m.id} style={{ display: "flex", flexDirection: "column" }}>
@@ -823,6 +887,41 @@ export default function AdminMessagesPage() {
                   </div>
                 )}
               </div>
+
+              {/* Proxy Perspective Switcher */}
+              {activeChat.role === "client" && (
+                <div style={{ display: "flex", gap: 10, padding: "10px 16px", background: "rgba(255,255,255,0.02)", borderTop: "1px solid var(--border)", alignItems: "center" }}>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                    🎭 Proxy Role perspective:
+                  </span>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${proxyRole === "admin" ? "btn-primary" : "btn-ghost"}`}
+                      style={{ fontSize: 11, padding: "4px 10px", height: 26, borderRadius: 6 }}
+                      onClick={() => setProxyRole("admin")}
+                    >
+                      👑 Admin (Manager)
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${proxyRole === "editor" ? "btn-primary" : "btn-ghost"}`}
+                      style={{ fontSize: 11, padding: "4px 10px", height: 26, borderRadius: 6 }}
+                      onClick={() => setProxyRole("editor")}
+                    >
+                      👥 Editor Proxy
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${proxyRole === "client" ? "btn-primary" : "btn-ghost"}`}
+                      style={{ fontSize: 11, padding: "4px 10px", height: 26, borderRadius: 6 }}
+                      onClick={() => setProxyRole("client")}
+                    >
+                      💼 Client Proxy
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Message Input Area */}
               {activeChat.role === "client" && isRecording ? (

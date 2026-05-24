@@ -144,9 +144,15 @@ export default function ClientWorkspace() {
     }
 
     try {
+      const { auth } = await initFirebase();
+      const token = await auth.currentUser?.getIdToken();
+
       const res = await fetch("/api/chat/send-message", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({
           clientId: user.uid,
           senderId: user.uid,
@@ -157,10 +163,11 @@ export default function ClientWorkspace() {
       });
 
       if (!res.ok) {
-        throw new Error("Failed to send message via security filters");
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to send message via security filters");
       }
-    } catch (err) {
-      alert("Error sending message: check connection or disallowed contact info.");
+    } catch (err: any) {
+      alert("Error sending message: " + (err.message || "check connection or disallowed contact/payment info."));
       setInputText(textToSend); // restore input
     } finally {
       setSending(false);
@@ -170,9 +177,15 @@ export default function ClientWorkspace() {
   // Helper function to dispatch secure messages
   const triggerSendMessage = async (mediaUrl: string, type: "photo" | "audio" | "video") => {
     try {
+      const { auth } = await initFirebase();
+      const token = await auth.currentUser?.getIdToken();
+
       const res = await fetch("/api/chat/send-message", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({
           clientId: user.uid,
           senderId: user.uid,
@@ -182,9 +195,12 @@ export default function ClientWorkspace() {
           mediaData: mediaUrl
         })
       });
-      if (!res.ok) throw new Error("Blocked by security scanner");
-    } catch (err) {
-      alert("Media sharing failed safety/moderation validation.");
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Blocked by security scanner");
+      }
+    } catch (err: any) {
+      alert("Media sharing failed safety/moderation validation: " + err.message);
     }
   };
 

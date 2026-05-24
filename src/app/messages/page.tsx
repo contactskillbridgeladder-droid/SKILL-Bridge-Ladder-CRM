@@ -250,9 +250,15 @@ export default function MessagesPage() {
   const triggerSendMessage = async (mediaUrl: string, type: "photo" | "audio" | "video") => {
     if (!activeChat || !currentUser) return;
     try {
+      const { auth } = await initFirebase();
+      const token = await auth.currentUser?.getIdToken();
+
       const res = await fetch("/api/chat/send-message", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({
           clientId: activeChat.uid,
           senderId: currentUser.uid,
@@ -263,9 +269,12 @@ export default function MessagesPage() {
         })
       });
 
-      if (!res.ok) throw new Error("Blocked by AI Security Filter");
-    } catch (err) {
-      alert("Failed to deliver media draft.");
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Blocked by AI Security Filter");
+      }
+    } catch (err: any) {
+      alert("Failed to deliver media draft: " + err.message);
     }
   };
 
@@ -283,9 +292,15 @@ export default function MessagesPage() {
       set(ref(rtdb, `chats/bridge_${activeChat.uid}/typing/${currentUser.uid}`), false);
 
       try {
+        const { auth } = await initFirebase();
+        const token = await auth.currentUser?.getIdToken();
+
         const res = await fetch("/api/chat/send-message", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
           body: JSON.stringify({
             clientId: activeChat.uid,
             senderId: currentUser.uid,
@@ -296,10 +311,11 @@ export default function MessagesPage() {
         });
 
         if (!res.ok) {
-          throw new Error("Blocked by AI Security Filter");
+          const errorData = await res.json();
+          throw new Error(errorData.error || "Blocked by AI Security Filter");
         }
-      } catch (err) {
-        alert("Message blocked or failed. Google Drive links are allowed, but external contacts/links are blocked.");
+      } catch (err: any) {
+        alert("Message blocked or failed: " + (err.message || "Google Drive links are allowed, but external contacts/links/payments are blocked."));
         setInputText(textToSend);
       } finally {
         setSending(false);
