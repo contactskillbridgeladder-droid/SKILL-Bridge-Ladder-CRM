@@ -26,6 +26,7 @@ export default function Home() {
                 const role = data.role || "editor";
                 if (role === "admin") router.push("/admin");
                 else if (role === "head_editor") router.push("/head-editor");
+                else if (role === "client") router.push("/client");
                 else router.push("/editor");
               } else {
                 router.push("/login");

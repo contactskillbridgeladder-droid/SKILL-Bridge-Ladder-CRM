@@ -2,21 +2,22 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Simple auth check ─────────────────────────────────────────────────────
-    // We avoid nested get() calls inside rules entirely.
-    // Role-based filtering is enforced client-side in the application code.
-    // The rules ensure only authenticated users access the database and that
-    // users cannot read/write data belonging to other users where applicable.
+    // ── Auth helpers ──────────────────────────────────────────────────────────
     function isSignedIn() { return request.auth != null; }
+    
+    function isAdmin() {
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
 
     // ── Users collection ──────────────────────────────────────────────────────
     match /users/{uid} {
       // Any authenticated user can read user docs (team management, assignment).
       allow read: if isSignedIn();
-      // Users can create their own doc during auth, and Admins can update docs via the Team Management UI.
-      allow create, update: if isSignedIn();
-      // Admins need to delete other users — admin check enforced in app code.
-      allow delete: if isSignedIn();
+      // Users can register/create their own doc during auth, and Admins can update docs.
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      // Only Admins can delete users.
+      allow delete: if isSignedIn() && isAdmin();
 
       // Notifications sub-collection
       match /notifications/{notifId} {
@@ -33,37 +34,29 @@ service cloud.firestore {
     match /invites/{inviteId} {
       // Anyone can read (needed before login to validate invite link)
       allow read:   if true;
-      // Any authenticated user can write (create invite or mark as used)
-      allow write:  if isSignedIn();
+      // Only Admins can generate invites
+      allow write:  if isSignedIn() && isAdmin();
     }
 
     // ── Tasks ─────────────────────────────────────────────────────────────────
     match /tasks/{taskId} {
-      // All authenticated users can read tasks.
-      // Client-side code filters by role (editors only see their tasks).
       allow read: if isSignedIn();
-
-      // Only allow creates/deletes from authenticated users.
-      // Admin enforcement is done at the application layer.
-      allow create: if isSignedIn();
-      allow delete: if isSignedIn();
-
-      // Any authenticated user can update a task (role checks in app code).
+      // Only Admins can create and delete tasks
+      allow create, delete: if isSignedIn() && isAdmin();
+      // Any authenticated user can update task status/notes
       allow update: if isSignedIn();
     }
 
     // ── Channels ──────────────────────────────────────────────────────────────
     match /channels/{channelId} {
       allow read:   if isSignedIn();
-      allow write:  if isSignedIn();
+      allow write:  if isSignedIn() && isAdmin();
     }
 
     // ── Payments ──────────────────────────────────────────────────────────────
     match /payments/{paymentId} {
       allow read:   if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
-      allow delete: if false;
+      allow create, update, delete: if isSignedIn() && isAdmin();
     }
 
     // ── Audit Logs ────────────────────────────────────────────────────────────
@@ -80,9 +73,9 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // ── Deny everything else ──────────────────────────────────────────────────
+    // ── Fallback ──────────────────────────────────────────────────────────────
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if isSignedIn() && isAdmin();
     }
   }
 }

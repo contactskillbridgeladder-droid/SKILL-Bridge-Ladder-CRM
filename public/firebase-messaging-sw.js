@@ -41,7 +41,7 @@ messaging.onBackgroundMessage((payload) => {
       action: "reply", 
       title: "Reply",
       type: "text"
-    } as any);
+    });
   }
 
   return self.registration.showNotification(title, {
@@ -109,8 +109,7 @@ self.addEventListener("push", (event) => {
   if (!event.data) return;
 
   // If Firebase Messaging SDK already handled it, this might be redundant.
-  // But for data-only messages on Android Chrome, the SDK sometimes misses it, so we handle it manually.
-  let data: any = {};
+  let data = {};
   try {
     data = event.data.json();
   } catch {
@@ -136,7 +135,7 @@ self.addEventListener("push", (event) => {
       action: "reply", 
       title: "Reply",
       type: "text"
-    } as any);
+    });
   }
 
   event.waitUntil(

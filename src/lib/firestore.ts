@@ -93,8 +93,9 @@ export interface UserProfile {
   uid: string;
   email: string;
   name: string;
-  role: "admin" | "head_editor" | "editor";
+  role: "admin" | "head_editor" | "editor" | "client";
   sourced_by?: string;
+  assignedEditorUid?: string;
   whatsappNumber?: string;
   createdAt?: any;
   isBanned?: boolean;
@@ -103,13 +104,22 @@ export interface UserProfile {
 export async function getUsers(): Promise<UserProfile[]> {
   const db = await getDb();
   const snap = await getDocs(collection(db, "users"));
-  return snap.docs.map(d => d.data() as UserProfile);
+  return snap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile));
 }
 
 export async function getUsersByRole(role: string): Promise<UserProfile[]> {
   const db = await getDb();
   const snap = await getDocs(query(collection(db, "users"), where("role", "==", role)));
-  return snap.docs.map(d => d.data() as UserProfile);
+  return snap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile));
+}
+
+export async function getClients(): Promise<UserProfile[]> {
+  return getUsersByRole("client");
+}
+
+export async function assignEditorToClient(clientId: string, editorUid: string): Promise<void> {
+  const db = await getDb();
+  await updateDoc(doc(db, "users", clientId), { assignedEditorUid: editorUid });
 }
 
 export async function getCurrentUser(): Promise<UserProfile | null> {
@@ -118,7 +128,7 @@ export async function getCurrentUser(): Promise<UserProfile | null> {
   if (!user) return null;
   const db = await getDb();
   const snap = await getDoc(doc(db, "users", user.uid));
-  return snap.exists() ? (snap.data() as UserProfile) : null;
+  return snap.exists() ? ({ uid: snap.id, ...snap.data() } as UserProfile) : null;
 }
 
 // ── CHANNELS ──────────────────────────────────────────────────────────────────

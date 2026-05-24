@@ -2,8 +2,8 @@
   "rules": {
     "chats": {
       "$chatId": {
-        ".read": "auth != null && $chatId.contains(auth.uid)",
-        ".write": "auth != null && $chatId.contains(auth.uid)",
+        ".read": "auth != null",
+        ".write": "auth != null",
         "messages": {
           "$messageId": {
             ".validate": "newData.hasChildren(['senderId', 'text', 'timestamp'])"

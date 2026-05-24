@@ -4,6 +4,7 @@ import { getFirestore, Firestore } from "firebase/firestore";
 import { getDatabase, Database } from "firebase/database";
 import { getAnalytics, isSupported, Analytics } from "firebase/analytics";
 import { getMessaging, getToken, Messaging } from "firebase/messaging";
+import { getStorage, FirebaseStorage } from "firebase/storage";
 
 // NOTE: This worker URL is environment-sensitive. The app fetches Firebase configurations 
 // dynamically from the Cloudflare Worker environment to prevent exposing hardcoded keys.
@@ -13,6 +14,7 @@ let app: FirebaseApp;
 let auth: Auth;
 let db: Firestore;
 let rtdb: Database;
+let storage: FirebaseStorage;
 let analytics: Analytics | undefined;
 let messaging: Messaging | undefined;
 
@@ -46,6 +48,7 @@ export async function initFirebase() {
       }
 
       rtdb = getDatabase(app);
+      storage = getStorage(app);
 
       if (typeof window !== "undefined") {
         const supported = await isSupported();
@@ -55,7 +58,7 @@ export async function initFirebase() {
         // Do NOT call getMessaging(app) here.
       }
 
-      return { app, auth, db, rtdb, analytics, messaging: undefined };
+      return { app, auth, db, rtdb, storage, analytics, messaging: undefined };
     } catch (error) {
       initializationPromise = null;
       console.error("Failed to initialize Firebase:", error);
@@ -94,9 +97,11 @@ export async function getFCMToken(): Promise<string | null> {
     const vapidKey = config.vapidKey;
     if (!vapidKey) return null;
 
+    // Explicitly register firebase-messaging-sw.js to prevent scope-matching timeouts under Next.js PWA
+    const registration = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
     const token = await getToken(messaging, {
       vapidKey,
-      serviceWorkerRegistration: await navigator.serviceWorker.getRegistration("/"),
+      serviceWorkerRegistration: registration,
     });
     return token || null;
   } catch (err) {

@@ -33,6 +33,7 @@ const SIDEBAR: Record<string, { section?: string; items: NavItem[] }[]> = {
     ]},
     { section:"Management", items: [
       { label:"Team",      short:"Team",    href:"/admin/team",     icon:IC.team },
+      { label:"Assignments", short:"Assign", href:"/admin/shifting", icon:IC.gear },
       { label:"Channels",  short:"Ch.",     href:"/admin/channels", icon:IC.bell },
       { label:"Finance",   short:"Finance", href:"/admin/finance",  icon:IC.dollar },
     ]},
@@ -65,6 +66,14 @@ const SIDEBAR: Record<string, { section?: string; items: NavItem[] }[]> = {
       { label:"My Profile",  short:"Profile", href:"/profile",        icon:IC.team },
     ]}
   ],
+  client: [
+    { items: [
+      { label:"My Workspace", short:"Workspace", href:"/client",       icon:IC.grid },
+    ]},
+    { section:"Account", items: [
+      { label:"My Profile",  short:"Profile", href:"/profile",        icon:IC.team },
+    ]}
+  ],
 };
 
 // ── Mobile bottom nav (max 4 page links + bell = 5) ──────────────────────────
@@ -87,9 +96,13 @@ const MOBILE: Record<string, NavItem[]> = {
     { label:"Earn",    short:"Earn",    href:"/editor/earnings", icon:IC.dollar },
     { label:"Chat",    short:"Chat",    href:"/messages",        icon:IC.chat },
   ],
+  client: [
+    { label:"Workspace", short:"Workspace", href:"/client",          icon:IC.grid },
+    { label:"Profile",   short:"Profile",   href:"/profile",         icon:IC.team },
+  ],
 };
 
-const ROLE_LABEL: Record<string,string> = { admin:"Admin", head_editor:"Head Editor", editor:"Editor" };
+const ROLE_LABEL: Record<string,string> = { admin:"Admin", head_editor:"Head Editor", editor:"Editor", client:"Client" };
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function Sidebar({ role="admin", userName="", uid="" }:

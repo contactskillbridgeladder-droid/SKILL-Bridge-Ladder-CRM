@@ -16,17 +16,30 @@ export default function AdminTeam() {
 
   // Invite link generator states
   const [showInviteGenerator, setShowInviteGenerator] = useState(false);
-  const [inviteRole, setInviteRole] = useState<"editor" | "head_editor">("editor");
+  const [inviteRole, setInviteRole] = useState<"editor" | "head_editor" | "client">("editor");
   const [inviteExpiry, setInviteExpiry] = useState("24"); // in hours
   const [generatedLink, setGeneratedLink] = useState("");
   const [generating, setGenerating] = useState(false);
+
+  // Manual Registration States
+  const [showManualRegister, setShowManualRegister] = useState(false);
+  const [registering, setRegistering] = useState(false);
+  const [registerForm, setRegisterForm] = useState({
+    name: "",
+    email: "",
+    whatsappNumber: "",
+    password: "",
+    role: "editor" as "editor" | "head_editor" | "client" | "admin",
+    sourced_by: "",
+    assignedEditorUid: ""
+  });
 
   // Edit Modal States
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [editForm, setEditForm] = useState({
     name: "",
     email: "",
-    role: "editor" as "admin" | "head_editor" | "editor",
+    role: "editor" as "admin" | "head_editor" | "editor" | "client",
     sourced_by: "",
     whatsappNumber: "",
     isBanned: false
@@ -54,6 +67,7 @@ export default function AdminTeam() {
   const filtered = users.filter(u => !search || [u.name, u.email, u.role].some(v => v?.toLowerCase().includes(search.toLowerCase())));
   const editors = users.filter(u => u.role === "editor");
   const heads = users.filter(u => u.role === "head_editor");
+  const clients = users.filter(u => u.role === "client");
   const active = users.length;
 
   const handleGenerateInvite = async (e: React.FormEvent) => {
@@ -86,13 +100,58 @@ export default function AdminTeam() {
     }
   };
 
+  const handleManualRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    setRegistering(true);
+    try {
+      const res = await fetch("/api/admin/create-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          adminUid: currentUser.uid,
+          email: registerForm.email,
+          password: registerForm.password,
+          name: registerForm.name,
+          whatsappNumber: registerForm.whatsappNumber,
+          role: registerForm.role,
+          sourced_by: registerForm.role === "editor" ? registerForm.sourced_by : "",
+          assignedEditorUid: registerForm.role === "client" ? registerForm.assignedEditorUid : ""
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to register user");
+
+      showToast(`✅ Member ${registerForm.email} registered manually!`);
+      setShowManualRegister(false);
+      setRegisterForm({
+        name: "",
+        email: "",
+        whatsappNumber: "",
+        password: "",
+        role: "editor",
+        sourced_by: "",
+        assignedEditorUid: ""
+      });
+
+      // Reload members list
+      const updatedList = await getUsers();
+      setUsers(updatedList);
+    } catch (err: any) {
+      showToast("❌ Registration failed: " + err.message);
+    } finally {
+      setRegistering(false);
+    }
+  };
+
   const handleEditClick = (user: UserProfile) => {
     setSelectedUser(user);
     setEditForm({
       name: user.name || "",
       email: user.email || "",
       role: user.role || "editor",
-      sourced_by: user.sourced_by || "",
+      sourced_by: user.role === "client" ? (user.assignedEditorUid || "") : (user.sourced_by || ""),
       whatsappNumber: user.whatsappNumber || "",
       isBanned: user.isBanned === true
     });
@@ -111,6 +170,7 @@ export default function AdminTeam() {
         role: editForm.role,
         whatsappNumber: editForm.whatsappNumber,
         sourced_by: editForm.role === "editor" ? editForm.sourced_by : "",
+        assignedEditorUid: editForm.role === "client" ? editForm.sourced_by : "",
         isBanned: editForm.isBanned
       };
 
@@ -194,7 +254,8 @@ export default function AdminTeam() {
 
       <div className="page-header animate-fade">
         <div><h1 className="page-title">Team Management</h1><p className="page-subtitle">All members loaded live from Firebase Auth + Firestore.</p></div>
-        <div className="page-actions">
+        <div className="page-actions" style={{ display: "flex", gap: 12 }}>
+          <button className="btn btn-secondary" onClick={() => setShowManualRegister(true)}>➕ Register Member Manually</button>
           <button className="btn btn-primary" onClick={() => { setShowInviteGenerator(true); setGeneratedLink(""); }}>🔗 Generate Invite Link</button>
         </div>
       </div>
@@ -212,7 +273,7 @@ export default function AdminTeam() {
             { label: "Total Members", value: String(users.length), icon: "👥", color: "icon-purple" },
             { label: "Head Editors", value: String(heads.length), icon: "⭐", color: "icon-blue" },
             { label: "Editors", value: String(editors.length), icon: "✏️", color: "icon-green" },
-            { label: "Active", value: String(active), icon: "✅", color: "icon-amber" },
+            { label: "Clients", value: String(clients.length), icon: "💼", color: "icon-amber" },
           ].map(s => (
             <div key={s.label} className="stat-card">
               <div className={`stat-icon-wrap ${s.color}`}>{s.icon}</div>
@@ -288,6 +349,7 @@ export default function AdminTeam() {
                 <select className="crm-input" value={editForm.role} onChange={e => setEditForm(f => ({ ...f, role: e.target.value as any }))}>
                   <option value="editor">Editor</option>
                   <option value="head_editor">Head Editor</option>
+                  <option value="client">Client</option>
                   <option value="admin">Admin</option>
                 </select>
               </div>
@@ -298,6 +360,16 @@ export default function AdminTeam() {
                   <select className="crm-input" value={editForm.sourced_by} onChange={e => setEditForm(f => ({ ...f, sourced_by: e.target.value }))}>
                     <option value="">No Head Editor</option>
                     {heads.map(h => <option key={h.uid} value={h.uid}>{h.name || h.email}</option>)}
+                  </select>
+                </div>
+              )}
+
+              {editForm.role === "client" && (
+                <div className="form-group animate-fade">
+                  <label className="form-label">Assigned Editor</label>
+                  <select className="crm-input" value={editForm.sourced_by} onChange={e => setEditForm(f => ({ ...f, sourced_by: e.target.value }))}>
+                    <option value="">Unassigned</option>
+                    {editors.map(ed => <option key={ed.uid} value={ed.uid}>{ed.name || ed.email}</option>)}
                   </select>
                 </div>
               )}
@@ -347,6 +419,7 @@ export default function AdminTeam() {
                   <select className="crm-input" value={inviteRole} onChange={e => setInviteRole(e.target.value as any)}>
                     <option value="editor">Editor</option>
                     <option value="head_editor">Head Editor</option>
+                    <option value="client">Client</option>
                   </select>
                 </div>
                 
@@ -389,6 +462,72 @@ export default function AdminTeam() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Manual User Registration Modal */}
+      {showManualRegister && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "var(--bg-card)", border: "1px solid var(--border-bright)", borderRadius: 16, width: "100%", maxWidth: 500, maxHeight: "95vh", overflow: "auto", boxShadow: "0 32px 80px rgba(0,0,0,0.6)" }}>
+            <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>Register Member Manually</div>
+              <button onClick={() => setShowManualRegister(false)} style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 18, cursor: "pointer" }}>✕</button>
+            </div>
+            <form onSubmit={handleManualRegister} style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+              <div className="form-group">
+                <label className="form-label">Full Name</label>
+                <input className="crm-input" required placeholder="e.g. John Doe" value={registerForm.name} onChange={e => setRegisterForm(f => ({ ...f, name: e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Email Address</label>
+                <input className="crm-input" type="email" required placeholder="e.g. member@skillbridge.in" value={registerForm.email} onChange={e => setRegisterForm(f => ({ ...f, email: e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Password</label>
+                <input className="crm-input" type="password" required placeholder="Min 6 characters" minLength={6} value={registerForm.password} onChange={e => setRegisterForm(f => ({ ...f, password: e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">WhatsApp Number</label>
+                <input className="crm-input" placeholder="e.g. +91 99887 76655" value={registerForm.whatsappNumber} onChange={e => setRegisterForm(f => ({ ...f, whatsappNumber: e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">System Role</label>
+                <select className="crm-input" value={registerForm.role} onChange={e => setRegisterForm(f => ({ ...f, role: e.target.value as any }))}>
+                  <option value="editor">Editor</option>
+                  <option value="head_editor">Head Editor</option>
+                  <option value="client">Client</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+
+              {registerForm.role === "editor" && (
+                <div className="form-group animate-fade">
+                  <label className="form-label">Assigned Head Editor (Sourced By)</label>
+                  <select className="crm-input" value={registerForm.sourced_by} onChange={e => setRegisterForm(f => ({ ...f, sourced_by: e.target.value }))}>
+                    <option value="">No Head Editor</option>
+                    {heads.map(h => <option key={h.uid} value={h.uid}>{h.name || h.email}</option>)}
+                  </select>
+                </div>
+              )}
+
+              {registerForm.role === "client" && (
+                <div className="form-group animate-fade">
+                  <label className="form-label">Assigned Editor</label>
+                  <select className="crm-input" value={registerForm.assignedEditorUid} onChange={e => setRegisterForm(f => ({ ...f, assignedEditorUid: e.target.value }))}>
+                    <option value="">Unassigned</option>
+                    {editors.map(ed => <option key={ed.uid} value={ed.uid}>{ed.name || ed.email}</option>)}
+                  </select>
+                </div>
+              )}
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 12, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowManualRegister(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={registering}>
+                  {registering ? "Registering..." : "Register User"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
