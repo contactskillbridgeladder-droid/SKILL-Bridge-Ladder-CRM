@@ -352,6 +352,12 @@ Do not include any markdown backticks or block formatting. Output must be raw JS
 
   } catch (error: any) {
     console.error("send-message api error:", error);
+    try {
+      const fs = require("fs");
+      const path = require("path");
+      const logMsg = `[${new Date().toISOString()}] send-message error: ${error.stack || error.message}\n`;
+      fs.appendFileSync(path.join(process.cwd(), "api_error.log"), logMsg);
+    } catch (e) {}
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
