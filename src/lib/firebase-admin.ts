@@ -42,6 +42,22 @@ export async function getAccessToken(): Promise<string> {
   let private_key  = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
 
   if (!client_email || !private_key) {
+    try {
+      const fs = await import("fs");
+      const path = await import("path");
+      const saPath = path.join(process.cwd(), "skillbridge-crm-firebase-adminsdk-fbsvc-18ba4e7b8a.json");
+      if (fs.existsSync(saPath)) {
+        const saContent = fs.readFileSync(saPath, "utf8");
+        const sa = JSON.parse(saContent);
+        client_email = sa.client_email;
+        private_key = sa.private_key?.replace(/\\n/g, "\n");
+      }
+    } catch (saErr) {
+      console.warn("Failed to load local service account JSON fallback:", saErr);
+    }
+  }
+
+  if (!client_email || !private_key) {
     const secrets = await getServerSecrets();
     client_email = secrets.firebaseClientEmail;
     private_key  = secrets.firebasePrivateKey?.replace(/\\n/g, "\n");

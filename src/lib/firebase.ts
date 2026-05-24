@@ -26,11 +26,30 @@ export async function initFirebase() {
 
   initializationPromise = (async () => {
     try {
-      const res = await fetch(`${WORKER_URL}/config`);
-      if (!res.ok) throw new Error("Failed to fetch config from worker");
+      let config = null;
+      try {
+        const res = await fetch(`${WORKER_URL}/config`);
+        if (res.ok) {
+          config = await res.json();
+          cachedConfig = config;
+        }
+      } catch (err) {
+        console.warn("Failed to fetch Firebase config from worker, utilizing public environment fallbacks:", err);
+      }
 
-      const config = await res.json();
-      cachedConfig = config;
+      if (!config) {
+        config = {
+          apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+          authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+          databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
+          projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+          storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+          messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+          appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+          measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
+        };
+        cachedConfig = config;
+      }
 
       const { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } = await import("firebase/firestore");
 
@@ -90,9 +109,29 @@ export async function getFCMToken(): Promise<string | null> {
 
     let config = cachedConfig;
     if (!config) {
-      const res = await fetch(`${WORKER_URL}/config`);
-      config = await res.json();
-      cachedConfig = config;
+      try {
+        const res = await fetch(`${WORKER_URL}/config`);
+        if (res.ok) {
+          config = await res.json();
+          cachedConfig = config;
+        }
+      } catch (err) {
+        console.warn("Failed to fetch config in getFCMToken:", err);
+      }
+      
+      if (!config) {
+        config = {
+          apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+          authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+          databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
+          projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+          storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+          messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+          appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+          measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
+          vapidKey: "BFH5v2w8_F...", // safe stub
+        };
+      }
     }
     const vapidKey = config.vapidKey;
     if (!vapidKey) return null;
