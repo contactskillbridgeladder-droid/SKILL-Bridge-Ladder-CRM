@@ -2,21 +2,19 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
+import fs from "fs";
+import path from "path";
+import { getAccessToken, getServerSecrets } from "@/lib/firebase-admin";
+import { logActivity } from "@/lib/firestore";
 
 const PROJECT_ID = "skillbridge-crm";
 const FIRESTORE_URL = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
 const RTDB_URL = "https://skillbridge-crm-default-rtdb.firebaseio.com";
 
-async function getAccessToken(): Promise<string> {
-  const { getAccessToken: _get } = await import("@/lib/firebase-admin");
-  return _get();
-}
-
 async function getGeminiApiKey(): Promise<string | null> {
   let apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     try {
-      const { getServerSecrets } = await import("@/lib/firebase-admin");
       const secrets = await getServerSecrets();
       apiKey = secrets.geminiApiKey;
     } catch (err) {
@@ -250,8 +248,7 @@ Do not include any markdown backticks or block formatting. Output must be raw JS
 
         // Audit Log
         const adminUser = { uid: "system", name: "AI Safety Agent", email: "security@skillbridge.in" };
-        const { logActivity: _log } = await import("@/lib/firestore");
-        await _log(
+        await logActivity(
           "AI Blocked Information",
           `Censored message from ${senderRole === "client" ? clientEmail : "Editor"} on chat bridge_${clientId}. Censored details: "${text.substring(0, 100)}..."`,
           adminUser
@@ -353,8 +350,6 @@ Do not include any markdown backticks or block formatting. Output must be raw JS
   } catch (error: any) {
     console.error("send-message api error:", error);
     try {
-      const fs = require("fs");
-      const path = require("path");
       const logMsg = `[${new Date().toISOString()}] send-message error: ${error.stack || error.message}\n`;
       fs.appendFileSync(path.join(process.cwd(), "api_error.log"), logMsg);
     } catch (e) {}
