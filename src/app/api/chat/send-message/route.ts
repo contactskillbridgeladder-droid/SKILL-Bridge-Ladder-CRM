@@ -5,7 +5,6 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { getAccessToken, getServerSecrets } from "@/lib/firebase-admin";
-import { logActivity } from "@/lib/firestore";
 
 const PROJECT_ID = "skillbridge-crm";
 const FIRESTORE_URL = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
@@ -248,7 +247,8 @@ Do not include any markdown backticks or block formatting. Output must be raw JS
 
         // Audit Log
         const adminUser = { uid: "system", name: "AI Safety Agent", email: "security@skillbridge.in" };
-        await logActivity(
+        const { logActivity: _log } = await import("@/lib/firestore");
+        await _log(
           "AI Blocked Information",
           `Censored message from ${senderRole === "client" ? clientEmail : "Editor"} on chat bridge_${clientId}. Censored details: "${text.substring(0, 100)}..."`,
           adminUser
