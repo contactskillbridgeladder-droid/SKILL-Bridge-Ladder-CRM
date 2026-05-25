@@ -4,7 +4,7 @@ import ClientProjects from "@/components/ClientProjects";
 import { initFirebase } from "@/lib/firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
-import { ref, onValue, off, set, update, get, remove } from "firebase/database";
+import { ref, onValue, off, set, update, get, remove, query, limitToLast } from "firebase/database";
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 
 interface Message {
@@ -67,7 +67,8 @@ export default function ClientWorkspace() {
           const typingRef = ref(realDb, `chats/${chatId}/typing`);
 
           // Subscribe to messages
-          onValue(messagesRef, snap => {
+          const messagesQuery = query(messagesRef, limitToLast(50));
+          onValue(messagesQuery, snap => {
             const msgs: Message[] = [];
             if (snap.exists()) {
               const data = snap.val();

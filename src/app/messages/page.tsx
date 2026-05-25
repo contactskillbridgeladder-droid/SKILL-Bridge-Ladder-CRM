@@ -5,7 +5,7 @@ import { initFirebase } from "@/lib/firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { getUsers, UserProfile } from "@/lib/firestore";
 import { useRouter } from "next/navigation";
-import { ref, set, push, onValue, off, update, get } from "firebase/database";
+import { ref, set, push, onValue, off, update, get, query, limitToLast } from "firebase/database";
 import { doc, updateDoc } from "firebase/firestore";
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 
@@ -192,8 +192,9 @@ export default function MessagesPage() {
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
-    // Listen to messages
-    onValue(messagesRef, snap => {
+    // Listen to messages (limit to 50 for speed)
+    const messagesQuery = query(messagesRef, limitToLast(50));
+    onValue(messagesQuery, snap => {
       const msgs: Message[] = [];
       if (snap.exists()) {
         const data = snap.val();
