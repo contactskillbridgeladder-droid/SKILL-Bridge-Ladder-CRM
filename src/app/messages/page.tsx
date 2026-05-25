@@ -516,24 +516,18 @@ export default function MessagesPage() {
 
         setSending(true);
         try {
-          const { auth } = await import('@/lib/firebase').then(m => m.initFirebase());
-          const token = await auth.currentUser?.getIdToken();
-
-          const formData = new FormData();
-          formData.append("file", new File([audioBlob], fileName, { type: nativeType }));
-          formData.append("pathPrefix", `bridges/${currentUser?.uid || "unknown"}`);
-
-          const res = await fetch("/api/upload", {
-            method: "POST",
-            headers: { "Authorization": `Bearer ${token}` },
-            body: formData
-          });
-
-          if (!res.ok) throw new Error("Upload failed");
-          const data = await res.json();
+          const { storage } = await import('@/lib/firebase').then(m => m.initFirebase());
+          const { ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
           
-          await triggerSendMessage(data.url, "audio", { fileName });
+          const pathPrefix = `bridges/${currentUser?.uid || "unknown"}`;
+          const storageRef = ref(storage, `${pathPrefix}/${fileName}`);
+          
+          await uploadBytes(storageRef, audioBlob, { contentType: nativeType });
+          const publicUrl = await getDownloadURL(storageRef);
+          
+          await triggerSendMessage(publicUrl, "audio", { fileName });
         } catch (err: any) {
+          console.error("Audio Upload Error:", err);
           alert("Failed to upload audio: " + err.message);
         } finally {
           setSending(false);
@@ -562,6 +556,9 @@ export default function MessagesPage() {
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
+      if (mediaRecorderRef.current.stream) {
+        mediaRecorderRef.current.stream.getTracks().forEach((track: any) => track.stop());
+      }
       setIsRecording(false);
       clearInterval(recordingTimerRef.current);
     }
