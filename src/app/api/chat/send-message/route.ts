@@ -4,10 +4,38 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getAccessToken } from "@/lib/firebase-admin";
 import { scanMessage } from "@/lib/ai-scanner";
+import * as admin from "firebase-admin";
 
 const PROJECT_ID = "skillbridge-crm";
 const FIRESTORE_URL = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
 const RTDB_URL = "https://skillbridge-crm-default-rtdb.firebaseio.com";
+
+// ── Firebase Admin RTDB helper (initialises once per cold start) ─────────────
+function getRtdb(): admin.database.Database {
+  if (!admin.apps.length) {
+    // Credentials are loaded from env or the SA JSON file on disk
+    let credential: admin.credential.Credential;
+    const email = process.env.FIREBASE_CLIENT_EMAIL;
+    const rawKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+    if (email && rawKey) {
+      credential = admin.credential.cert({ client_email: email, private_key: rawKey, project_id: PROJECT_ID } as any);
+    } else {
+      // Fall back to SA JSON file (available locally)
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const sa = require("../../../../../skillbridge-crm-firebase-adminsdk-fbsvc-18ba4e7b8a.json");
+        credential = admin.credential.cert(sa);
+      } catch {
+        credential = admin.credential.applicationDefault();
+      }
+    }
+    admin.initializeApp({ credential, databaseURL: RTDB_URL });
+  } else if (!admin.app().options.databaseURL) {
+    // App already initialised but without RTDB URL — patch it
+    admin.app().options.databaseURL = RTDB_URL;
+  }
+  return admin.database();
+}
 
 // ── Google Identity Provider Token Validation ────────────────────────────────
 async function verifyIdToken(idToken: string, apiKey: string): Promise<string> {
@@ -196,23 +224,19 @@ export async function POST(request: Request) {
       status: "sent"
     };
 
-    const msgRes = await fetch(`${RTDB_URL}/chats/bridge_${clientId}/messages.json?access_token=${token}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(msgPayload)
-    });
+    // 8b. Write message + metadata via firebase-admin SDK (no REST auth issues)
+    const rtdb = getRtdb();
+    const chatRef = rtdb.ref(`chats/bridge_${clientId}`);
 
-    if (!msgRes.ok) {
-      const errText = await msgRes.text();
-      throw new Error(`Failed to write to RTDB: ${msgRes.status} ${errText}`);
-    }
+    // Push new message
+    await chatRef.child("messages").push(msgPayload);
 
     // 9. Update Metadata & Unread Count for Receiver
     let recipientId = "";
     if (senderRole === "client") {
-      recipientId = assignedEditorUid || "admin"; // Forward to editor or fallback to admin
+      recipientId = assignedEditorUid || "admin";
     } else {
-      recipientId = clientId; // Editor/Admin to Client
+      recipientId = clientId;
     }
 
     let displayMsg = processedText;
@@ -220,32 +244,18 @@ export async function POST(request: Request) {
     if (type === "audio") displayMsg = "🎵 Voice Note";
     if (type === "video") displayMsg = "🎥 Video Submission";
 
-    // Fetch unread count for recipient
-    const unreadRes = await fetch(`${RTDB_URL}/chats/bridge_${clientId}/metadata/unreadCount/${recipientId}.json?access_token=${token}`);
-    if (!unreadRes.ok) {
-      const errText = await unreadRes.text();
-      throw new Error(`Failed to fetch unread count from RTDB: ${unreadRes.status} ${errText}`);
-    }
-    const currentUnread = (await unreadRes.json()) || 0;
+    // Read current unread count then increment atomically
+    const unreadSnap = await chatRef.child(`metadata/unreadCount/${recipientId}`).get();
+    const currentUnread: number = (unreadSnap.val() as number) || 0;
 
-    const metaUpdate: Record<string, any> = {
+    await chatRef.child("metadata").update({
       lastMessage: displayMsg,
       lastTimestamp: Date.now(),
       lastSenderId: senderId,
       clientId,
       editorId: assignedEditorUid,
       [`unreadCount/${recipientId}`]: currentUnread + 1
-    };
-
-    const patchRes = await fetch(`${RTDB_URL}/chats/bridge_${clientId}/metadata.json?access_token=${token}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(metaUpdate)
     });
-    if (!patchRes.ok) {
-      const errText = await patchRes.text();
-      throw new Error(`Failed to patch metadata in RTDB: ${patchRes.status} ${errText}`);
-    }
 
     // 10. Trigger Push Notification to recipient
     if (recipientId) {
