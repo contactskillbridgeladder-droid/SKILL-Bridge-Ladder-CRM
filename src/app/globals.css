@@ -37,7 +37,7 @@ body {
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  min-height: 100vh;
+  min-height: 100dvh;
   overscroll-behavior: none;
 }
 
@@ -48,7 +48,7 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: #52525b; }
 
 /* ─── Layout ─── */
-.app-shell { display: flex; min-height: 100vh; }
+.app-shell { display: flex; min-height: 100dvh; }
 .app-sidebar {
   width: var(--sidebar-w);
   min-width: var(--sidebar-w);
@@ -58,7 +58,7 @@ body {
   flex-direction: column;
   position: sticky;
   top: 0;
-  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   z-index: 30;
 }
@@ -74,7 +74,7 @@ body {
 .chat-app-main {
   flex: 1;
   padding: 0;
-  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -503,7 +503,7 @@ body {
   
   .chat-app-main {
     padding: 0;
-    height: calc(100vh - (var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px)));
+    height: calc(100dvh - (var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px)));
     overflow: hidden;
   }
 
