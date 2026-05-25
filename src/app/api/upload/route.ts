@@ -56,14 +56,11 @@ export async function POST(request: Request) {
     
     const fileRef = bucket.file(fileName);
     await fileRef.save(buffer, {
-      metadata: { contentType: file.type },
-      public: true // Automatically make the URL public
+      metadata: { contentType: file.type }
     });
 
-    // Make the file publicly accessible
-    await fileRef.makePublic();
-
-    const publicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+    // Construct the Firebase Storage download URL without relying on legacy ACLs
+    const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(fileName)}?alt=media`;
     
     return NextResponse.json({ success: true, url: publicUrl });
 

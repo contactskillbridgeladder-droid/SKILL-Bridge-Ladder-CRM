@@ -336,8 +336,9 @@ export default function ClientWorkspace() {
 
       mediaRecorder.onstop = async () => {
         const nativeType = audioChunksRef.current[0]?.type || "audio/webm";
+        const ext = nativeType.includes("mp4") ? "mp4" : "webm";
         const audioBlob = new Blob(audioChunksRef.current, { type: nativeType });
-        const fileName = `voice_note_${Date.now()}.webm`;
+        const fileName = `voice_note_${Date.now()}.${ext}`;
 
         setSending(true);
         try {

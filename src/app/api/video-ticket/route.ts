@@ -175,30 +175,15 @@ export async function POST(request: Request) {
       });
     };
 
-    // Head editor + their subordinates
+    // Head editor
     if (headEditorUid) {
       await addRecipient(headEditorUid, "head_editor");
-
-      // List all users — find editors sourced_by this head editor
-      const allUsersRes = await fetch(`${FIRESTORE_URL}/users?pageSize=200`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const allUsersData = await allUsersRes.json();
-      if (allUsersData.documents) {
-        for (const doc of allUsersData.documents) {
-          const f = doc.fields;
-          if (
-            f?.role?.stringValue === "editor" &&
-            f?.sourced_by?.stringValue === headEditorUid
-          ) {
-            await addRecipient(f.uid?.stringValue, "editor");
-          }
-        }
-      }
     }
 
-    // Directly assigned editor
-    if (editorUid) await addRecipient(editorUid, "editor");
+    // Directly assigned editor (Only notify the assignee, not everyone)
+    if (editorUid) {
+      await addRecipient(editorUid, "editor");
+    }
 
     // ── 4. Notify all recipients (in-app + FCM + email) ───────────────────────
     const notifyResults = await Promise.allSettled(
