@@ -429,7 +429,7 @@ const paymentRules: ScanRule[] = [
   {
     id: "R60",
     name: "Rate Negotiation Phrases",
-    regex: /\b(?:how much (?:do you|will you|would you)|what(?:'s| is| are) (?:your|the) (?:rate|price|charge|fee|cost)|your charges|your rate|your fees|my rate is|i charge|my fees|quote me|send (?:a |the )?quote|price list|rate card)\b/gi,
+    regex: /\b(?:my rate is|i charge|my fees|my charges|my pricing|my price list|i will charge|quote me|send (?:a |the )?quote|price list|rate card|share (?:your )?rates?|discuss (?:the )?(?:rate|price|fee|cost|payment) (?:outside|privately|off))\b/gi,
     replacement: "[⚠ Blocked Negotiation]",
   },
   {
