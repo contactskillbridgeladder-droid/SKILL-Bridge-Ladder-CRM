@@ -130,22 +130,6 @@ export default function Sidebar({ role="admin", userName="", uid="" }:
     return () => unsub?.();
   }, [uid]);
 
-  // Push permission prompt & auto-registration
-  useEffect(() => {
-    if (typeof window === "undefined" || !("Notification" in window)) return;
-    
-    // Auto-register token if already granted (fixes missing tokens on mobile)
-    if (Notification.permission === "granted") {
-      // Small delay to ensure Service Worker is ready
-      setTimeout(() => {
-        handleEnablePush(true);
-      }, 2000);
-    } else if (Notification.permission === "default") {
-      const t = setTimeout(() => setShowPushBanner(true), 3000);
-      return () => clearTimeout(t);
-    }
-  }, [uid]);
-
   const handleEnablePush = async (silent = false) => {
     if (!silent) setShowPushBanner(false);
     
@@ -173,6 +157,23 @@ export default function Sidebar({ role="admin", userName="", uid="" }:
       console.error("FCM token error:", e); 
     }
   };
+
+  // Push permission prompt & auto-registration
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    
+    // Auto-register token if already granted (fixes missing tokens on mobile)
+    if (Notification.permission === "granted") {
+      // Small delay to ensure Service Worker is ready
+      setTimeout(() => {
+        handleEnablePush(true);
+      }, 2000);
+    } else if (Notification.permission === "default") {
+      const t = setTimeout(() => setShowPushBanner(true), 3000);
+      return () => clearTimeout(t);
+    }
+  }, [uid]);
+
 
   const handleLogout = async () => {
     try { const { auth } = await initFirebase(); await signOut(auth); } catch {}

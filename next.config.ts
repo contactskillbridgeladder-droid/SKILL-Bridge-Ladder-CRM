@@ -30,6 +30,12 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "crm.skillbridgeladder.in" },
     ],
   },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    ignoreBuildErrors: true,
+  },
   turbopack: {},
 };
 

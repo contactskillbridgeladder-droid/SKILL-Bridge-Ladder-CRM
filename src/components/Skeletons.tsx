@@ -22,7 +22,7 @@ export function TableSkeleton({ rows = 5, cols = 6 }: { rows?: number; cols?: nu
           <tr>
             {Array.from({ length: cols }).map((_, i) => (
               <th key={i}>
-                <div style={{ width: 60 + Math.random() * 40, height: 12, background: "rgba(255,255,255,0.1)", borderRadius: 4 }} className="skeleton"></div>
+                <div style={{ width: 60 + ((i * 17) % 40), height: 12, background: "rgba(255,255,255,0.1)", borderRadius: 4 }} className="skeleton"></div>
               </th>
             ))}
           </tr>
@@ -32,7 +32,7 @@ export function TableSkeleton({ rows = 5, cols = 6 }: { rows?: number; cols?: nu
             <tr key={r}>
               {Array.from({ length: cols }).map((_, c) => (
                 <td key={c}>
-                  <div style={{ width: 80 + Math.random() * 60, height: 16, background: "rgba(255,255,255,0.04)", borderRadius: 4 }} className="skeleton"></div>
+                  <div style={{ width: 80 + (((r + c) * 23) % 60), height: 16, background: "rgba(255,255,255,0.04)", borderRadius: 4 }} className="skeleton"></div>
                 </td>
               ))}
             </tr>
