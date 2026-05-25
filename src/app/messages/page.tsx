@@ -484,6 +484,11 @@ export default function MessagesPage() {
   // Base64 Audio Recorder Loop
   const startRecording = async () => {
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert("Audio recording requires a secure HTTPS connection. Please use HTTPS or localhost.");
+        return;
+      }
+      
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const options = { mimeType: "audio/webm" };
       let mediaRecorder;
@@ -504,9 +509,9 @@ export default function MessagesPage() {
       };
 
       mediaRecorder.onstop = async () => {
-        const nativeType = audioChunksRef.current[0]?.type || "audio/mp4";
+        const nativeType = audioChunksRef.current[0]?.type || "audio/webm";
         const audioBlob = new Blob(audioChunksRef.current, { type: nativeType });
-        const fileName = `voice_note_${Date.now()}.mp4`;
+        const fileName = `voice_note_${Date.now()}.webm`;
 
         setSending(true);
         try {
@@ -526,7 +531,7 @@ export default function MessagesPage() {
           if (!res.ok) throw new Error("Upload failed");
           const data = await res.json();
           
-          await triggerSendMessage(data.url, "audio");
+          await triggerSendMessage(data.url, "audio", { fileName });
         } catch (err: any) {
           alert("Failed to upload audio: " + err.message);
         } finally {
@@ -548,8 +553,8 @@ export default function MessagesPage() {
         });
       }, 1000);
 
-    } catch (err) {
-      alert("Microphone permission denied.");
+    } catch (err: any) {
+      alert("Microphone Error: " + (err.message || "Permission denied or hardware not found."));
     }
   };
 
