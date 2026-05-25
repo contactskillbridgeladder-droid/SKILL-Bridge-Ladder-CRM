@@ -214,7 +214,13 @@ export default function ClientWorkspace() {
     const isVideo = fileType.startsWith("video/");
     const typeLabel = isVideo ? "video" : "photo";
 
-    // A. Native Cloud Storage upload with progress bar
+    // B. Base64 fallback (Only for images, avoids Firebase Storage limit completely)
+    if (isImage) {
+      runBase64ImageFallback(file);
+      return;
+    }
+
+    // A. Native Cloud Storage upload for Videos (Requires Firebase Storage setup)
     if (storageInstance) {
       setSending(true);
       setUploadProgress(0);
@@ -229,16 +235,10 @@ export default function ClientWorkspace() {
           setUploadProgress(Math.round(progress));
         },
         async (error) => {
-          console.error("Cloud storage upload failed, running fallbacks:", error);
+          console.error("Cloud storage upload failed:", error);
           setUploadProgress(null);
-          
-          // Image Fallback
-          if (isImage) {
-            runBase64ImageFallback(file);
-          } else {
-            alert("Video uploads require Firebase Storage activation. Please verify your Firebase project console.");
-            setSending(false);
-          }
+          alert("Video uploads require Firebase Storage activation. Please verify your Firebase project console.");
+          setSending(false);
         },
         async () => {
           const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
@@ -322,37 +322,7 @@ export default function ClientWorkspace() {
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || "audio/webm" });
         const fileName = `voice_note_${Date.now()}.webm`;
-        
-        // A. Native Cloud Storage upload with progress bar
-        if (storageInstance) {
-          setSending(true);
-          setUploadProgress(0);
-
-          const path = `bridges/${user.uid}/${fileName}`;
-          const sRef = storageRef(storageInstance, path);
-          const uploadTask = uploadBytesResumable(sRef, audioBlob);
-
-          uploadTask.on("state_changed",
-            (snap) => {
-              const progress = (snap.bytesTransferred / snap.totalBytes) * 100;
-              setUploadProgress(Math.round(progress));
-            },
-            async (err) => {
-              console.error("Audio cloud upload failed, running Base64 fallback:", err);
-              setUploadProgress(null);
-              runBase64AudioFallback(audioBlob);
-            },
-            async () => {
-              const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-              setUploadProgress(null);
-              await triggerSendMessage(downloadURL, "audio");
-              setSending(false);
-            }
-          );
-          return;
-        }
-
-        // B. Base64 Audio fallback
+        // B. Base64 Audio fallback (100% Free option, skips Firebase Storage limits)
         runBase64AudioFallback(audioBlob);
       };
 

@@ -360,8 +360,15 @@ export default function AdminMessagesPage() {
     const isVideo = fileType.startsWith("video/");
     const typeLabel = isVideo ? "video" : "photo";
 
-    // A. Native Cloud Storage upload with progress bar
-    if (storageInstance) {
+    // For the completely free option, we will store images natively inside the Realtime Database using Base64.
+    // This bypasses Firebase Storage entirely, requiring no plan upgrades or CORS configurations.
+    if (isImage) {
+      runBase64ImageFallback(file);
+      return;
+    }
+
+    // A. Native Cloud Storage upload for Videos (Requires Firebase Storage setup)
+    if (storageInstance && activeChat) {
       setSending(true);
       setUploadProgress(0);
 
@@ -375,15 +382,10 @@ export default function AdminMessagesPage() {
           setUploadProgress(Math.round(progress));
         },
         async (error) => {
-          console.error("Cloud storage upload failed, running fallbacks:", error);
+          console.error("Cloud storage upload failed:", error);
           setUploadProgress(null);
-          
-          if (isImage) {
-            runBase64ImageFallback(file);
-          } else {
-            alert("Video sharing failed. Configure Firebase Storage.");
-            setSending(false);
-          }
+          alert("Video sharing failed. Configure Firebase Storage.");
+          setSending(false);
         },
         async () => {
           const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
@@ -467,35 +469,8 @@ export default function AdminMessagesPage() {
         const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || "audio/webm" });
         const fileName = `voice_note_${Date.now()}.webm`;
 
-        // A. Native Cloud Storage upload
-        if (storageInstance && activeChat) {
-          setSending(true);
-          setUploadProgress(0);
-
-          const path = `bridges/${activeChat.uid}/${fileName}`;
-          const sRef = storageRef(storageInstance, path);
-          const uploadTask = uploadBytesResumable(sRef, audioBlob);
-
-          uploadTask.on("state_changed",
-            (snap) => {
-              const progress = (snap.bytesTransferred / snap.totalBytes) * 100;
-              setUploadProgress(Math.round(progress));
-            },
-            async (err) => {
-              console.error("Audio cloud upload failed, running Base64 fallback:", err);
-              setUploadProgress(null);
-              runBase64AudioFallback(audioBlob);
-            },
-            async () => {
-              const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-              setUploadProgress(null);
-              await triggerSendMessage(downloadURL, "audio");
-              setSending(false);
-            }
-          );
-          return;
-        }
-
+        // We use the 100% free Realtime Database storage (Base64) for voice notes by default.
+        // This avoids Firebase Storage limits and CORS issues completely.
         runBase64AudioFallback(audioBlob);
       };
 
