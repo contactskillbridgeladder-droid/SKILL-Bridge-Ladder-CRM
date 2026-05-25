@@ -129,7 +129,7 @@ export async function getFCMToken(): Promise<string | null> {
           messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
           appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
           measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
-          vapidKey: "BFH5v2w8_F...", // safe stub
+          vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || "BFH5v2w8_F...", // safe stub
         };
       }
     }

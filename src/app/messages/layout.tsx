@@ -40,7 +40,7 @@ export default function MessagesLayout({ children }: { children: React.ReactNode
   return (
     <div className="app-shell">
       <Sidebar role={user.role} userName={user.name} uid={user.uid} />
-      <main className="app-main" style={{ padding: 0, height: "100vh", overflow: "hidden" }}>{children}</main>
+      <main className="chat-app-main">{children}</main>
     </div>
   );
 }

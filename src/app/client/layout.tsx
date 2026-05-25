@@ -67,7 +67,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   return (
     <div className="app-shell">
       <Sidebar role={user.role} userName={user.name} uid={user.uid} />
-      <main className="app-main">{children}</main>
+      <main className="chat-app-main">{children}</main>
     </div>
   );
 }

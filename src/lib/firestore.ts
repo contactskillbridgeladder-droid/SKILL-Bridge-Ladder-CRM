@@ -88,6 +88,11 @@ export async function updateTask(id: string, data: Partial<Task>): Promise<void>
   await updateDoc(doc(db, "tasks", id), { ...cleanData, updatedAt: serverTimestamp() });
 }
 
+export async function deleteTask(id: string): Promise<void> {
+  const db = await getDb();
+  await deleteDoc(doc(db, "tasks", id));
+}
+
 // ── USERS ─────────────────────────────────────────────────────────────────────
 export interface UserProfile {
   uid: string;

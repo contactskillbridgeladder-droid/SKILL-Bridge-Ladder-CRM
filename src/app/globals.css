@@ -71,6 +71,12 @@ body {
   gap: 32px;
   max-width: 1400px;
 }
+.chat-app-main {
+  flex: 1;
+  padding: 0;
+  height: 100vh;
+  overflow: hidden;
+}
 
 /* ─── Sidebar ─── */
 .sidebar-logo {
@@ -144,7 +150,7 @@ body {
   display: none;
   position: fixed;
   bottom: 0; left: 0; right: 0;
-  height: var(--bottom-nav-h);
+  height: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px));
   background: rgba(11,11,13,0.97);
   backdrop-filter: blur(24px) saturate(200%);
   -webkit-backdrop-filter: blur(24px) saturate(200%);
@@ -494,6 +500,12 @@ body {
     padding: 20px 16px calc(var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px) + 16px);
     gap: 20px;
   }
+  
+  .chat-app-main {
+    padding: 0;
+    height: calc(100vh - (var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px)));
+    overflow: hidden;
+  }
 
   .page-title { font-size: clamp(18px, 5.5vw, 22px); }
   .page-subtitle { font-size: 13px; }
@@ -535,7 +547,7 @@ body {
 /* ─── Realtime Chat Styling ─── */
 .chat-layout {
   display: flex;
-  height: 100vh;
+  height: 100%;
   width: 100%;
   background: var(--bg);
 }
@@ -726,7 +738,7 @@ body {
   .chat-sidebar {
     width: 100%;
     border-right: none;
-    height: calc(100vh - var(--bottom-nav-h));
+    height: 100%;
   }
 
   /* When chat is active on mobile, hide sidebar */
@@ -746,7 +758,7 @@ body {
 
   .chat-main {
     width: 100%;
-    height: calc(100vh - var(--bottom-nav-h));
+    height: 100%;
   }
 
   .chat-info-sidebar {

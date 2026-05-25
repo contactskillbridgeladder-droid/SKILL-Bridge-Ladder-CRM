@@ -4,8 +4,8 @@ import { getUsers, updateUserProfile, logActivity, UserProfile } from "@/lib/fir
 import { StatSkeleton, TableSkeleton } from "@/components/Skeletons";
 import { initFirebase } from "@/lib/firebase";
 
-const roleLabel: Record<string, string> = { editor: "Editor", head_editor: "Head Editor", admin: "Admin" };
-const roleBadge: Record<string, string> = { editor: "badge-blue", head_editor: "badge-purple", admin: "badge-green" };
+const roleLabel: Record<string, string> = { editor: "Editor", head_editor: "Head Editor", admin: "Admin", msg_only: "Msg Editor" };
+const roleBadge: Record<string, string> = { editor: "badge-blue", head_editor: "badge-purple", admin: "badge-green", msg_only: "badge-amber" };
 
 export default function AdminTeam() {
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -65,7 +65,7 @@ export default function AdminTeam() {
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
 
   const filtered = users.filter(u => !search || [u.name, u.email, u.role].some(v => v?.toLowerCase().includes(search.toLowerCase())));
-  const editors = users.filter(u => u.role === "editor");
+  const editors = users.filter(u => u.role === "editor" || u.role === "msg_only");
   const heads = users.filter(u => u.role === "head_editor");
   const clients = users.filter(u => u.role === "client");
   const active = users.length;
@@ -349,6 +349,7 @@ export default function AdminTeam() {
                 <select className="crm-input" value={editForm.role} onChange={e => setEditForm(f => ({ ...f, role: e.target.value as any }))}>
                   <option value="editor">Editor</option>
                   <option value="head_editor">Head Editor</option>
+                  <option value="msg_only">Msg Editor (Chat Only)</option>
                   <option value="client">Client</option>
                   <option value="admin">Admin</option>
                 </select>
@@ -496,6 +497,7 @@ export default function AdminTeam() {
                 <select className="crm-input" value={registerForm.role} onChange={e => setRegisterForm(f => ({ ...f, role: e.target.value as any }))}>
                   <option value="editor">Editor</option>
                   <option value="head_editor">Head Editor</option>
+                  <option value="msg_only">Msg Editor (Chat Only)</option>
                   <option value="client">Client</option>
                   <option value="admin">Admin</option>
                 </select>

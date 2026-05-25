@@ -122,6 +122,10 @@ export default function MessagesPage() {
             return user.role === "admin" || (user.role === "head_editor" && user.uid === profile.sourced_by);
           }
 
+          if (profile.role === "msg_only") {
+            return user.role === "admin";
+          }
+
           return false;
         });
 
@@ -749,7 +753,7 @@ export default function MessagesPage() {
       {(activeChat || !isMobileView) ? (
         <div className="chat-main" style={{ display: activeChat ? "flex" : isMobileView ? "none" : "flex" }}>
           {activeChat ? (
-            <div className="flex-1 flex flex-col bg-white overflow-hidden">
+            <div className="flex-1 flex flex-col overflow-hidden" style={{ background: "var(--bg-card)" }}>
               {currentUser && (
                 <div style={{ display: "flex", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", padding: "10px 20px", gap: 20 }}>
                   <button onClick={() => setView("chat")} style={{ fontWeight: view === "chat" ? "bold" : "normal", color: view === "chat" ? "var(--primary)" : "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: "5px 0" }}>Chat</button>

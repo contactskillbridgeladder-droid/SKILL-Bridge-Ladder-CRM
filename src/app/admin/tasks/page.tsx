@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { subscribeAllTasks, createTask, updateTask, getUsers, getChannels, Task, UserProfile, Channel } from "@/lib/firestore";
+import { subscribeAllTasks, createTask, updateTask, deleteTask, getUsers, getChannels, Task, UserProfile, Channel } from "@/lib/firestore";
 import { initFirebase } from "@/lib/firebase";
 import { TableSkeleton } from "@/components/Skeletons";
 
@@ -162,6 +162,22 @@ export default function AdminTasks() {
     }
   };
 
+  const handleDeleteTask = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this task? This action cannot be undone.")) return;
+    await deleteTask(id);
+    showToast("Task deleted successfully");
+  };
+
+  const handleAssignEditor = async (t: Task, editorUid: string) => {
+    const assignedEditor = users.find(u => u.uid === editorUid);
+    const editorName = assignedEditor?.name || "Unassigned";
+    await updateTask(t.id!, {
+      editorUid: editorUid || null,
+      editorName
+    });
+    showToast(`Task assigned to ${editorName}`);
+  };
+
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(""), 3000);
@@ -223,11 +239,30 @@ export default function AdminTasks() {
                   <tr><td colSpan={9}><div className="empty-state"><div className="empty-icon">📋</div><div className="empty-title">No tasks yet</div><div className="empty-desc">Click "New Task" to create the first one.</div></div></td></tr>
                 ) : filtered.map(t => (
                   <tr key={t.id}>
-                    <td><span className="cell-mono">{t.taskNumber || t.id?.slice(0, 6)}</span></td>
+                    <td><span className="cell-mono">{t.taskNumber || t.id?.slice(-6).toUpperCase()}</span></td>
                     <td><span className="cell-strong">{t.title}</span></td>
                     <td><span className="channel-pill">{t.channel}</span></td>
                     <td><span className={`badge ${t.type === "Shorts" ? "badge-blue" : "badge-purple"}`}>{t.type}</span></td>
-                    <td style={{ color: t.editorName === "Unassigned" ? "var(--text-muted)" : "var(--text-dim)", fontStyle: t.editorName === "Unassigned" ? "italic" : "normal" }}>{t.editorName}</td>
+                    <td>
+                      <select
+                        value={t.editorUid || ""}
+                        onChange={e => handleAssignEditor(t, e.target.value)}
+                        style={{ 
+                          background: "transparent", 
+                          border: "none", 
+                          cursor: "pointer", 
+                          color: t.editorUid ? "var(--text-dim)" : "var(--text-muted)", 
+                          fontStyle: t.editorUid ? "normal" : "italic",
+                          fontSize: 13,
+                          outline: "none",
+                          width: "100%",
+                          maxWidth: 120
+                        }}
+                      >
+                        <option value="">Unassigned</option>
+                        {editors.map(u => <option key={u.uid} value={u.uid}>{u.name}</option>)}
+                      </select>
+                    </td>
                     <td>
                       <select
                         value={t.status}
@@ -244,6 +279,7 @@ export default function AdminTasks() {
                       <div style={{ display: "flex", gap: 6 }}>
                         <button className="btn btn-ghost btn-sm" onClick={() => handleEditClick(t)}>Edit</button>
                         <button className="btn btn-ghost btn-sm" onClick={() => handleStatusChange(t, "Approved")} disabled={t.status === "Approved"}>Approve</button>
+                        <button className="btn btn-ghost btn-sm" style={{ color: "#ef4444" }} onClick={() => handleDeleteTask(t.id!)}>Delete</button>
                       </div>
                     </td>
                   </tr>

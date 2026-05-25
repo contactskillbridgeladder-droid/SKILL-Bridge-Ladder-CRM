@@ -430,7 +430,7 @@ export default function ClientWorkspace() {
   }
 
   return (
-    <div className="chat-layout client-workspace animate-fade" style={{ height: "calc(100vh - 64px)" }}>
+    <div className="chat-layout client-workspace animate-fade">
       {/* Floating Progress Bar Banner */}
       {uploadProgress !== null && (
         <div style={{
@@ -482,7 +482,7 @@ export default function ClientWorkspace() {
       </div>
 
       {/* Main chat window */}
-      <div className="flex-1 flex flex-col bg-white overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden" style={{ background: "var(--bg-card)" }}>
         <div style={{ display: "flex", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", padding: "10px 20px", gap: 20 }}>
           <button onClick={() => setView("chat")} style={{ fontWeight: view === "chat" ? "bold" : "normal", color: view === "chat" ? "var(--primary)" : "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: "5px 0" }}>Chat</button>
           <button onClick={() => setView("projects")} style={{ fontWeight: view === "projects" ? "bold" : "normal", color: view === "projects" ? "var(--primary)" : "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: "5px 0" }}>Projects</button>
