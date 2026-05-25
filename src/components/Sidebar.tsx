@@ -108,6 +108,9 @@ const ROLE_LABEL: Record<string,string> = { admin:"Admin", head_editor:"Head Edi
 export default function Sidebar({ role="admin", userName="", uid="" }:
   { role?:string; userName?:string; uid?:string }) {
 
+  if (role === "client" || role === "msg_editor" || role === "admin_msg_only") return null;
+
+
   const pathname = usePathname();
   const router   = useRouter();
   const groups      = SIDEBAR[role] || SIDEBAR.admin;

@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
+import EditorProjects from "@/components/EditorProjects";
 import { initFirebase } from "@/lib/firebase";
-import { onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import { getUsers, UserProfile } from "@/lib/firestore";
 import { useRouter } from "next/navigation";
 import { ref, set, push, onValue, off, update, get } from "firebase/database";
@@ -17,6 +18,7 @@ interface Message {
   mediaData?: string;
   timestamp: number;
   status: "sent" | "delivered" | "read";
+  editedAt?: number;
   readTime?: number;
 }
 
@@ -36,6 +38,7 @@ export default function MessagesPage() {
   const [activeChat, setActiveChat] = useState<UserProfile | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState("");
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [typing, setTyping] = useState<Record<string, boolean>>({});
   const [chatMetadata, setChatMetadata] = useState<Record<string, ChatMetadata>>({});
   const [showInfo, setShowInfo] = useState(false);
@@ -47,6 +50,7 @@ export default function MessagesPage() {
   const [isMobileView, setIsMobileView] = useState(false);
   const [isEditingInfo, setIsEditingInfo] = useState(false);
   const [sending, setSending] = useState(false);
+  const [view, setView] = useState<"chat" | "projects">("chat");
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   // Audio Recording States
@@ -287,7 +291,9 @@ export default function MessagesPage() {
     if (activeChat.role === "client") {
       setSending(true);
       const textToSend = inputText;
+      const editId = editingMessageId;
       setInputText("");
+    setEditingMessageId(null);
 
       set(ref(rtdb, `chats/bridge_${activeChat.uid}/typing/${currentUser.uid}`), false);
 
@@ -307,7 +313,7 @@ export default function MessagesPage() {
             senderRole: "editor",
             text: textToSend,
             type: "text"
-          })
+          , editingMessageId: editId})
         });
 
         if (!res.ok) {
@@ -326,16 +332,22 @@ export default function MessagesPage() {
     // B. Direct Team Chats (Default)
     const chatId = [currentUser.uid, activeChat.uid].sort().join("_");
     const messagesRef = ref(rtdb, `chats/${chatId}/messages`);
-    const newMsgRef = push(messagesRef);
-
-    const messageData = {
-      senderId: currentUser.uid,
-      text: inputText,
-      timestamp: Date.now(),
-      status: "sent"
-    };
-
-    await set(newMsgRef, messageData);
+    if (editingMessageId) {
+      await update(ref(rtdb, `chats/${chatId}/messages/${editingMessageId}`), {
+        text: inputText,
+        editedAt: Date.now()
+      });
+      setEditingMessageId(null);
+    } else {
+      const newMsgRef = push(messagesRef);
+      const messageData = {
+        senderId: currentUser.uid,
+        text: inputText,
+        timestamp: Date.now(),
+        status: "sent"
+      };
+      await set(newMsgRef, messageData);
+    }
 
     const metaRef = ref(rtdb, `chats/${chatId}/metadata`);
     const currentUnread = chatMetadata[activeChat.uid]?.unreadCount?.[activeChat.uid] || 0;
@@ -349,6 +361,7 @@ export default function MessagesPage() {
 
     set(ref(rtdb, `chats/${chatId}/typing/${currentUser.uid}`), false);
     setInputText("");
+    setEditingMessageId(null);
 
     // Check if recipient is looking at this chat
     const recipientActiveSnap = await get(ref(rtdb, `chats/${chatId}/active/${activeChat.uid}`));
@@ -487,39 +500,34 @@ export default function MessagesPage() {
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || "audio/webm" });
-        const fileName = `voice_note_${Date.now()}.webm`;
+        const nativeType = audioChunksRef.current[0]?.type || "audio/mp4";
+        const audioBlob = new Blob(audioChunksRef.current, { type: nativeType });
+        const fileName = `voice_note_${Date.now()}.mp4`;
 
-        // A. Native Cloud Storage upload
-        if (storageInstance && activeChat) {
-          setSending(true);
-          setUploadProgress(0);
+        setSending(true);
+        try {
+          const { auth } = await import('@/lib/firebase').then(m => m.initFirebase());
+          const token = await auth.currentUser?.getIdToken();
 
-          const path = `bridges/${activeChat.uid}/${fileName}`;
-          const sRef = storageRef(storageInstance, path);
-          const uploadTask = uploadBytesResumable(sRef, audioBlob);
+          const formData = new FormData();
+          formData.append("file", new File([audioBlob], fileName, { type: nativeType }));
+          formData.append("pathPrefix", `bridges/${currentUser?.uid || "unknown"}`);
 
-          uploadTask.on("state_changed",
-            (snap) => {
-              const progress = (snap.bytesTransferred / snap.totalBytes) * 100;
-              setUploadProgress(Math.round(progress));
-            },
-            async (err) => {
-              console.error("Audio cloud upload failed, running Base64 fallback:", err);
-              setUploadProgress(null);
-              runBase64AudioFallback(audioBlob);
-            },
-            async () => {
-              const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-              setUploadProgress(null);
-              await triggerSendMessage(downloadURL, "audio");
-              setSending(false);
-            }
-          );
-          return;
+          const res = await fetch("/api/upload", {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${token}` },
+            body: formData
+          });
+
+          if (!res.ok) throw new Error("Upload failed");
+          const data = await res.json();
+          
+          await triggerSendMessage(data.url, "audio");
+        } catch (err: any) {
+          alert("Failed to upload audio: " + err.message);
+        } finally {
+          setSending(false);
         }
-
-        runBase64AudioFallback(audioBlob);
       };
 
       mediaRecorder.start();
@@ -539,19 +547,6 @@ export default function MessagesPage() {
     } catch (err) {
       alert("Microphone permission denied.");
     }
-  };
-
-  const runBase64AudioFallback = (audioBlob: Blob) => {
-    setSending(true);
-    const reader = new FileReader();
-    reader.readAsDataURL(audioBlob);
-    reader.onloadend = async () => {
-      const base64Audio = reader.result as string;
-      if (base64Audio) {
-        await triggerSendMessage(base64Audio, "audio");
-      }
-      setSending(false);
-    };
   };
 
   const stopRecording = () => {
@@ -754,217 +749,232 @@ export default function MessagesPage() {
       {(activeChat || !isMobileView) ? (
         <div className="chat-main" style={{ display: activeChat ? "flex" : isMobileView ? "none" : "flex" }}>
           {activeChat ? (
-            <>
-              {/* Header */}
-              <div className="chat-header">
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  {isMobileView && (
-                    <button
-                      onClick={() => setActiveChat(null)}
-                      style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", display: "flex", alignItems: "center", padding: 4 }}
-                    >
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-                    </button>
-                  )}
-                  <div className="chat-contact-avatar" style={{ width: 38, height: 38, fontSize: 14 }}>
-                    {activeChat.role === "client" ? "💼" : (activeChat.name || activeChat.email || "U")[0].toUpperCase()}
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>
-                      {activeChat.role === "client" ? `Client Channel: ${activeChat.name || activeChat.email}` : (activeChat.name || activeChat.email)}
-                    </div>
-                    <div style={{ fontSize: 11.5, color: "var(--text-muted)", textTransform: "capitalize" }}>
-                      {typing[activeChat.uid] ? (
-                        <span style={{ color: "#a78bfa", fontWeight: 500 }}>typing…</span>
-                      ) : (
-                        activeChat.role.replace("_", " ")
-                      )}
-                    </div>
-                  </div>
+            <div className="flex-1 flex flex-col bg-white overflow-hidden">
+              {currentUser && (
+                <div style={{ display: "flex", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", padding: "10px 20px", gap: 20 }}>
+                  <button onClick={() => setView("chat")} style={{ fontWeight: view === "chat" ? "bold" : "normal", color: view === "chat" ? "var(--primary)" : "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: "5px 0" }}>Chat</button>
+                  <button onClick={() => setView("projects")} style={{ fontWeight: view === "projects" ? "bold" : "normal", color: view === "projects" ? "var(--primary)" : "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: "5px 0" }}>Assigned Projects</button>
                 </div>
-
-                <button
-                  onClick={() => setShowInfo(!showInfo)}
-                  className={`btn btn-sm ${showInfo ? "btn-primary" : "btn-ghost"}`}
-                  style={{ borderRadius: 99, padding: "6px 12px" }}
-                >
-                  ℹ️ Info
-                </button>
-              </div>
-
-              {/* Message List */}
-              <div className="chat-messages-area">
-                {messages.length === 0 ? (
-                  <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}>
-                    <div style={{ fontSize: 32, marginBottom: 12 }}>💬</div>
-                    <div style={{ fontSize: 13.5, fontWeight: 500 }}>No messages yet</div>
-                    <p style={{ fontSize: 12, marginTop: 4 }}>Send a message to start conversation securely.</p>
-                  </div>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {messages.map((m, idx) => {
-                      const isMe = m.senderId === currentUser.uid;
-                      const showDateHeader = idx === 0 || formatDate(messages[idx - 1].timestamp) !== formatDate(m.timestamp);
-
-                      return (
-                        <div key={m.id} style={{ display: "flex", flexDirection: "column" }}>
-                          {showDateHeader && (
-                            <div className="chat-date-header">
-                              <span>{formatDate(m.timestamp)}</span>
-                            </div>
-                          )}
-
-                          <div className={`chat-message-bubble-wrapper ${isMe ? "sent" : "received"}`}>
-                            <div className={`chat-bubble ${isMe ? "sent" : "received"}`}>
-                              
-                              {(m.type === "text" || !m.type) ? (
-                                <div style={{ wordBreak: "break-word", fontSize: 13.5 }}>{m.text}</div>
-                              ) : null}
-
-                              {m.type === "photo" && m.mediaData ? (
-                                <div style={{ marginTop: 2, borderRadius: 8, overflow: "hidden", cursor: "zoom-in" }}>
-                                  <img
-                                    src={m.mediaData}
-                                    alt="Shared Asset"
-                                    style={{ maxWidth: "100%", maxHeight: 220, objectFit: "cover", borderRadius: 8, display: "block" }}
-                                    onClick={() => {
-                                      const w = window.open();
-                                      w?.document.write(`<img src="${m.mediaData}" style="max-width:100%; max-height:100vh; display:block; margin:auto;" />`);
-                                    }}
-                                  />
-                                </div>
-                              ) : null}
-
-                              {m.type === "audio" && m.mediaData ? (
-                                <div style={{ marginTop: 2, width: 220, padding: "8px 12px", background: "rgba(0,0,0,0.2)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.05)" }}>
-                                  <audio src={m.mediaData} controls style={{ width: "100%", height: 32 }} />
-                                </div>
-                              ) : null}
-
-                              {/* Render videos */}
-                              {m.type === "video" && m.mediaData ? (
-                                <div style={{ marginTop: 2, borderRadius: 8, overflow: "hidden", width: "100%", maxWidth: 320, background: "rgba(0,0,0,0.2)", border: "1px solid rgba(255,255,255,0.05)", padding: 8 }}>
-                                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, display: "flex", alignItems: "center", gap: 5 }}>
-                                    🎥 Video Draft
-                                  </div>
-                                  <video src={m.mediaData} controls style={{ width: "100%", borderRadius: 6, display: "block" }} />
-                                  <a 
-                                    href={m.mediaData} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer" 
-                                    className="btn btn-secondary btn-sm" 
-                                    style={{ width: "100%", marginTop: 8, height: 28, fontSize: 11.5, justifyContent: "center", textDecoration: "none" }}
-                                  >
-                                    ⬇️ Download Video File
-                                  </a>
-                                </div>
-                              ) : null}
-
-                              <div className="chat-bubble-footer">
-                                <span>{formatTime(m.timestamp)}</span>
-                                {isMe && (
-                                  <span
-                                    title={m.status === "read" && m.readTime ? `Read at ${new Date(m.readTime).toLocaleString()}` : m.status}
-                                    style={{ display: "flex", marginLeft: 4 }}
-                                  >
-                                    {m.status === "sent" ? (
-                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
-                                    ) : m.status === "delivered" ? (
-                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="3"><polyline points="17 6 8.5 15.5 5 12"/><polyline points="22 6 13.5 15.5 11 13"/></svg>
-                                    ) : (
-                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="3"><polyline points="17 6 8.5 15.5 5 12"/><polyline points="22 6 13.5 15.5 11 13"/></svg>
-                                    )}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    <div ref={messagesEndRef} />
-                  </div>
-                )}
-              </div>
-
-              {/* Message Input Panel */}
-              {activeChat.role === "client" && isRecording ? (
-                <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 10, padding: "8px 16px", height: 42, margin: "12px 16px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#f87171", fontSize: 13, fontWeight: 600 }}>
-                    <span className="pulse-dot" style={{ width: 8, height: 8, borderRadius: "50%", background: "#ef4444", display: "inline-block" }}></span>
-                    Recording Voice: {formatDuration(recordDuration)}
-                  </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      style={{ color: "#ef4444", height: 28, fontSize: 11, padding: "0 10px" }}
-                      onClick={() => {
-                        setIsRecording(false);
-                        clearInterval(recordingTimerRef.current);
-                        if (mediaRecorderRef.current) mediaRecorderRef.current.stop();
-                      }}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      style={{ height: 28, fontSize: 11, padding: "0 10px", background: "#ef4444" }}
-                      onClick={stopRecording}
-                    >
-                      Send Voice
-                    </button>
-                  </div>
+              )}
+              
+              {view === "projects" && currentUser ? (
+                <div style={{ flex: 1, overflowY: "auto", background: "#f9fafb" }}>
+                  <EditorProjects user={currentUser} />
                 </div>
               ) : (
-                <form onSubmit={sendMessage} className="chat-input-area">
-                  {activeChat.role === "client" && (
-                    <>
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        style={{ display: "none" }}
-                        accept="image/*,video/*"
-                        onChange={handlePhotoSelect}
-                      />
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        style={{ width: 42, height: 42, borderRadius: 10, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={sending}
-                        title="Share Media File"
-                      >
-                        📷
-                      </button>
+                <div className="flex flex-col h-full overflow-hidden">
+                  {/* Header */}
+                  <div className="chat-header">
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      {isMobileView && (
+                        <button
+                          onClick={() => setActiveChat(null)}
+                          style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", display: "flex", alignItems: "center", padding: 4 }}
+                        >
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+                        </button>
+                      )}
+                      <div className="chat-contact-avatar" style={{ width: 38, height: 38, fontSize: 14 }}>
+                        {activeChat.role === "client" ? "💼" : (activeChat.name || activeChat.email || "U")[0].toUpperCase()}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>
+                          {activeChat.role === "client" ? `Client Channel: ${activeChat.name || activeChat.email}` : (activeChat.name || activeChat.email)}
+                        </div>
+                        <div style={{ fontSize: 11.5, color: "var(--text-muted)", textTransform: "capitalize" }}>
+                          {typing[activeChat.uid] ? (
+                            <span style={{ color: "#a78bfa", fontWeight: 500 }}>typing…</span>
+                          ) : (
+                            activeChat.role.replace("_", " ")
+                          )}
+                        </div>
+                      </div>
+                    </div>
 
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        style={{ width: 42, height: 42, borderRadius: 10, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
-                        onClick={startRecording}
+                    <button
+                      onClick={() => setShowInfo(!showInfo)}
+                      className={`btn btn-sm ${showInfo ? "btn-primary" : "btn-ghost"}`}
+                      style={{ borderRadius: 99, padding: "6px 12px" }}
+                    >
+                      ℹ️ Info
+                    </button>
+                  </div>
+
+                  {/* Message List */}
+                  <div className="chat-messages-area">
+                    {messages.length === 0 ? (
+                      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}>
+                        <div style={{ fontSize: 32, marginBottom: 12 }}>💬</div>
+                        <div style={{ fontSize: 13.5, fontWeight: 500 }}>No messages yet</div>
+                        <p style={{ fontSize: 12, marginTop: 4 }}>Send a message to start conversation securely.</p>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                        {messages.map((m, idx) => {
+                          const isMe = m.senderId === currentUser.uid;
+                          const showDateHeader = idx === 0 || formatDate(messages[idx - 1].timestamp) !== formatDate(m.timestamp);
+
+                          return (
+                            <div key={m.id} style={{ display: "flex", flexDirection: "column" }}>
+                              {showDateHeader && (
+                                <div className="chat-date-header">
+                                  <span>{formatDate(m.timestamp)}</span>
+                                </div>
+                              )}
+
+                              <div className={`chat-message-bubble-wrapper ${isMe ? "sent" : "received"}`}>
+                                <div className={`chat-bubble ${isMe ? "sent" : "received"}`}>
+                                  
+                                  {(m.type === "text" || !m.type) ? (
+                                    <div style={{ wordBreak: "break-word", fontSize: 13.5 }}>{m.text}</div>
+                                  ) : null}
+
+                                  {m.type === "photo" && m.mediaData ? (
+                                    <div style={{ marginTop: 2, borderRadius: 8, overflow: "hidden", cursor: "zoom-in" }}>
+                                      <img
+                                        src={m.mediaData}
+                                        alt="Shared Asset"
+                                        style={{ maxWidth: "100%", maxHeight: 220, objectFit: "cover", borderRadius: 8, display: "block" }}
+                                        onClick={() => {
+                                          const w = window.open();
+                                          w?.document.write(`<img src="${m.mediaData}" style="max-width:100%; max-height:100vh; display:block; margin:auto;" />`);
+                                        }}
+                                      />
+                                    </div>
+                                  ) : null}
+
+                                  {m.type === "audio" && m.mediaData ? (
+                                    <div style={{ marginTop: 2, width: 220, padding: "8px 12px", background: "rgba(0,0,0,0.2)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.05)" }}>
+                                      <audio src={m.mediaData} controls style={{ width: "100%", height: 32 }} />
+                                    </div>
+                                  ) : null}
+
+                                  {/* Render videos */}
+                                  {m.type === "video" && m.mediaData ? (
+                                    <div style={{ marginTop: 2, borderRadius: 8, overflow: "hidden", width: "100%", maxWidth: 320, background: "rgba(0,0,0,0.2)", border: "1px solid rgba(255,255,255,0.05)", padding: 8 }}>
+                                      <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, display: "flex", alignItems: "center", gap: 5 }}>
+                                        🎥 Video Draft
+                                      </div>
+                                      <video src={m.mediaData} controls style={{ width: "100%", borderRadius: 6, display: "block" }} />
+                                      <a 
+                                        href={m.mediaData} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer" 
+                                        className="btn btn-secondary btn-sm" 
+                                        style={{ width: "100%", marginTop: 8, height: 28, fontSize: 11.5, justifyContent: "center", textDecoration: "none" }}
+                                      >
+                                        ⬇️ Download Video File
+                                      </a>
+                                    </div>
+                                  ) : null}
+
+                                  <div className="chat-bubble-footer">
+                                    <span>{formatTime(m.timestamp)}{m.editedAt ? " (edited)" : ""}</span>
+                                    {isMe && (
+                                      <span
+                                        title={m.status === "read" && m.readTime ? `Read at ${new Date(m.readTime).toLocaleString()}` : m.status}
+                                        style={{ display: "flex", marginLeft: 4 }}
+                                      >
+                                        {m.status === "sent" ? (
+                                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                                        ) : m.status === "delivered" ? (
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="3"><polyline points="17 6 8.5 15.5 5 12"/><polyline points="22 6 13.5 15.5 11 13"/></svg>
+                                        ) : (
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="3"><polyline points="17 6 8.5 15.5 5 12"/><polyline points="22 6 13.5 15.5 11 13"/></svg>
+                                        )}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        <div ref={messagesEndRef} />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Message Input Panel */}
+                  {activeChat.role === "client" && isRecording ? (
+                    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 10, padding: "8px 16px", height: 42, margin: "12px 16px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#f87171", fontSize: 13, fontWeight: 600 }}>
+                        <span className="pulse-dot" style={{ width: 8, height: 8, borderRadius: "50%", background: "#ef4444", display: "inline-block" }}></span>
+                        Recording Voice: {formatDuration(recordDuration)}
+                      </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          style={{ color: "#ef4444", height: 28, fontSize: 11, padding: "0 10px" }}
+                          onClick={() => {
+                            setIsRecording(false);
+                            clearInterval(recordingTimerRef.current);
+                            if (mediaRecorderRef.current) mediaRecorderRef.current.stop();
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          style={{ height: 28, fontSize: 11, padding: "0 10px", background: "#ef4444" }}
+                          onClick={stopRecording}
+                        >
+                          Send Voice
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <form onSubmit={sendMessage} className="chat-input-area">
+                      {activeChat.role === "client" && (
+                        <>
+                          <input
+                            type="file"
+                            ref={fileInputRef}
+                            style={{ display: "none" }}
+                            accept="image/*,video/*"
+                            onChange={handlePhotoSelect}
+                          />
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            style={{ width: 42, height: 42, borderRadius: 10, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={sending}
+                            title="Share Media File"
+                          >
+                            📷
+                          </button>
+
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            style={{ width: 42, height: 42, borderRadius: 10, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+                            onClick={startRecording}
+                            disabled={sending}
+                            title="Record Voice"
+                          >
+                            🎤
+                          </button>
+                        </>
+                      )}
+                      <input
+                        className="crm-input"
+                        placeholder={sending ? "Securing message transmission..." : "Type a message…"}
+                        value={inputText}
+                        onChange={e => handleInputChange(e.target.value)}
+                        style={{ flex: 1, height: 42, background: "rgba(0,0,0,0.2)" }}
                         disabled={sending}
-                        title="Record Voice"
-                      >
-                        🎤
+                      />
+                      <button type="submit" className="btn btn-primary" style={{ padding: "0 16px", height: 42 }} disabled={sending}>
+                        {sending ? "..." : "Send"}
                       </button>
-                    </>
+                    </form>
                   )}
-                  <input
-                    className="crm-input"
-                    placeholder={sending ? "Securing message transmission..." : "Type a message…"}
-                    value={inputText}
-                    onChange={e => handleInputChange(e.target.value)}
-                    style={{ flex: 1, height: 42, background: "rgba(0,0,0,0.2)" }}
-                    disabled={sending}
-                  />
-                  <button type="submit" className="btn btn-primary" style={{ padding: "0 16px", height: 42 }} disabled={sending}>
-                    {sending ? "..." : "Send"}
-                  </button>
-                </form>
+                </div>
               )}
-            </>
+            </div>
           ) : (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.05)" }}>
               <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>

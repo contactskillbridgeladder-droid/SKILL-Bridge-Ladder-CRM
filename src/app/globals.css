@@ -729,6 +729,21 @@ body {
     height: calc(100vh - var(--bottom-nav-h));
   }
 
+  /* When chat is active on mobile, hide sidebar */
+  .mobile-chat-active .chat-sidebar {
+    display: none !important;
+  }
+  
+  /* When chat is NOT active on mobile, hide main */
+  .mobile-chat-inactive .chat-main {
+    display: none !important;
+  }
+
+  /* Force hide sidebar globally for client (they only have 1 chat) */
+  .client-workspace .chat-sidebar {
+    display: none !important;
+  }
+
   .chat-main {
     width: 100%;
     height: calc(100vh - var(--bottom-nav-h));
@@ -741,6 +756,23 @@ body {
     bottom: var(--bottom-nav-h);
     width: 100%;
     z-index: 100;
+  }
+
+  /* Fix input area buttons overflowing on small phones */
+  .chat-input-area {
+    flex-wrap: wrap;
+    padding: 10px 14px;
+    gap: 8px;
+  }
+
+  .chat-input-area .btn-secondary {
+    width: 36px !important;
+    height: 36px !important;
+    font-size: 16px !important;
+  }
+  
+  .crm-input {
+    min-width: 100px;
   }
 }
 

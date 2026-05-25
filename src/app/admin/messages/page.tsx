@@ -1,10 +1,10 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
 import { initFirebase } from "@/lib/firebase";
-import { onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import { getUsers, UserProfile } from "@/lib/firestore";
 import { useRouter } from "next/navigation";
-import { ref, set, push, onValue, off, update, get } from "firebase/database";
+import { ref, set, push, onValue, off, update, get, remove } from "firebase/database";
 import { doc, updateDoc } from "firebase/firestore";
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 
@@ -13,10 +13,12 @@ interface Message {
   senderId: string;
   senderRole?: string;
   text: string;
-  type?: "text" | "photo" | "audio" | "video";
+  type?: "text" | "photo" | "audio" | "video" | "document";
   mediaData?: string;
+  fileName?: string;
   timestamp: number;
   status: "sent" | "delivered" | "read";
+  editedAt?: number;
   readTime?: number;
 }
 
@@ -36,6 +38,7 @@ export default function AdminMessagesPage() {
   const [activeChat, setActiveChat] = useState<UserProfile | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState("");
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [typing, setTyping] = useState<Record<string, boolean>>({});
   const [chatMetadata, setChatMetadata] = useState<Record<string, ChatMetadata>>({});
   const [showInfo, setShowInfo] = useState(false);
@@ -57,6 +60,8 @@ export default function AdminMessagesPage() {
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const docInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Form for editing user info
@@ -151,14 +156,14 @@ export default function AdminMessagesPage() {
     setProxyRole("admin"); // Reset proxy role on chat change
 
     const isClientChat = activeChat.role === "client";
-    const chatId = isClientChat ? `bridge_${activeChat.uid}` : [currentUser.uid, activeChat.uid].sort().join("_");
+    const chatId = isClientChat ? `bridge_${activeChat.uid}` : [(currentUser?.uid || "unknown"), activeChat.uid].sort().join("_");
 
     const messagesRef = ref(rtdb, `chats/${chatId}/messages`);
     const typingRef = ref(rtdb, `chats/${chatId}/typing`);
 
     // Reset unread count for current user
     update(ref(rtdb, `chats/${chatId}/metadata/unreadCount`), {
-      [currentUser.uid]: 0
+      [(currentUser?.uid || "unknown")]: 0
     });
 
     // Listen to messages
@@ -175,7 +180,7 @@ export default function AdminMessagesPage() {
         let hasUpdates = false;
         const updates: Record<string, any> = {};
         msgs.forEach(m => {
-          if (m.senderId !== currentUser.uid && m.status !== "read") {
+          if (m.senderId !== (currentUser?.uid || "unknown") && m.status !== "read") {
             updates[`${m.id}/status`] = "read";
             updates[`${m.id}/readTime`] = Date.now();
             hasUpdates = true;
@@ -217,18 +222,18 @@ export default function AdminMessagesPage() {
     setInputText(text);
     if (!currentUser || !activeChat || !rtdb) return;
     const isClientChat = activeChat.role === "client";
-    const chatId = isClientChat ? `bridge_${activeChat.uid}` : [currentUser.uid, activeChat.uid].sort().join("_");
-    const myTypingRef = ref(rtdb, `chats/${chatId}/typing/${currentUser.uid}`);
+    const chatId = isClientChat ? `bridge_${activeChat.uid}` : [(currentUser?.uid || "unknown"), activeChat.uid].sort().join("_");
+    const myTypingRef = ref(rtdb, `chats/${chatId}/typing/${(currentUser?.uid || "unknown")}`);
     set(myTypingRef, text.length > 0);
   };
 
-  const triggerSendMessage = async (mediaUrl: string, type: "photo" | "audio" | "video") => {
+  const triggerSendMessage = async (mediaUrl: string, type: "photo" | "audio" | "video" | "document", extraData?: any) => {
     if (!activeChat || !currentUser) return;
     try {
       const { auth } = await initFirebase();
       const token = await auth.currentUser?.getIdToken();
 
-      let resolvedSenderId = currentUser.uid;
+      let resolvedSenderId = (currentUser?.uid || "unknown");
       let resolvedSenderRole = "admin";
 
       if (activeChat.role === "client") {
@@ -236,7 +241,7 @@ export default function AdminMessagesPage() {
           resolvedSenderId = activeChat.uid;
           resolvedSenderRole = "client";
         } else if (proxyRole === "editor") {
-          resolvedSenderId = activeChat.assignedEditorUid || currentUser.uid;
+          resolvedSenderId = activeChat.assignedEditorUid || (currentUser?.uid || "unknown");
           resolvedSenderRole = "editor";
         }
       }
@@ -253,7 +258,7 @@ export default function AdminMessagesPage() {
           senderRole: resolvedSenderRole,
           text: "",
           type,
-          mediaData: mediaUrl
+          mediaData: mediaUrl, fileName: extraData?.fileName
         })
       });
 
@@ -275,22 +280,24 @@ export default function AdminMessagesPage() {
     if (activeChat.role === "client") {
       setSending(true);
       const textToSend = inputText;
+      const editId = editingMessageId;
       setInputText("");
+    setEditingMessageId(null);
 
-      set(ref(rtdb, `chats/bridge_${activeChat.uid}/typing/${currentUser.uid}`), false);
+      set(ref(rtdb, `chats/bridge_${activeChat.uid}/typing/${(currentUser?.uid || "unknown")}`), false);
 
       try {
         const { auth } = await initFirebase();
         const token = await auth.currentUser?.getIdToken();
 
-        let resolvedSenderId = currentUser.uid;
+        let resolvedSenderId = (currentUser?.uid || "unknown");
         let resolvedSenderRole = "admin";
 
         if (proxyRole === "client") {
           resolvedSenderId = activeChat.uid;
           resolvedSenderRole = "client";
         } else if (proxyRole === "editor") {
-          resolvedSenderId = activeChat.assignedEditorUid || currentUser.uid;
+          resolvedSenderId = activeChat.assignedEditorUid || (currentUser?.uid || "unknown");
           resolvedSenderRole = "editor";
         }
 
@@ -306,7 +313,7 @@ export default function AdminMessagesPage() {
             senderRole: resolvedSenderRole,
             text: textToSend,
             type: "text"
-          })
+          , editingMessageId: editId})
         });
 
         if (!res.ok) {
@@ -323,18 +330,24 @@ export default function AdminMessagesPage() {
     }
 
     // B. Team Chats (Direct Writes)
-    const chatId = [currentUser.uid, activeChat.uid].sort().join("_");
+    const chatId = [(currentUser?.uid || "unknown"), activeChat.uid].sort().join("_");
     const messagesRef = ref(rtdb, `chats/${chatId}/messages`);
-    const newMsgRef = push(messagesRef);
-
-    const messageData = {
-      senderId: currentUser.uid,
-      text: inputText,
-      timestamp: Date.now(),
-      status: "sent"
-    };
-
-    await set(newMsgRef, messageData);
+    if (editingMessageId) {
+      await update(ref(rtdb, `chats/${chatId}/messages/${editingMessageId}`), {
+        text: inputText,
+        editedAt: Date.now()
+      });
+      setEditingMessageId(null);
+    } else {
+      const newMsgRef = push(messagesRef);
+      const messageData = {
+        senderId: (currentUser?.uid || "unknown"),
+        text: inputText,
+        timestamp: Date.now(),
+        status: "sent"
+      };
+      await set(newMsgRef, messageData);
+    }
 
     const metaRef = ref(rtdb, `chats/${chatId}/metadata`);
     const currentUnread = chatMetadata[activeChat.uid]?.unreadCount?.[activeChat.uid] || 0;
@@ -342,15 +355,16 @@ export default function AdminMessagesPage() {
     await update(metaRef, {
       lastMessage: inputText,
       lastTimestamp: Date.now(),
-      lastSenderId: currentUser.uid,
+      lastSenderId: (currentUser?.uid || "unknown"),
       [`unreadCount/${activeChat.uid}`]: currentUnread + 1
     });
 
-    set(ref(rtdb, `chats/${chatId}/typing/${currentUser.uid}`), false);
+    set(ref(rtdb, `chats/${chatId}/typing/${(currentUser?.uid || "unknown")}`), false);
     setInputText("");
+    setEditingMessageId(null);
   };
 
-  // Cloud Storage selector supporting progress tracking
+  // Media / File selector supporting Cloud Storage & Base64 fallbacks
   const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !currentUser || !activeChat || sending) return;
@@ -358,12 +372,21 @@ export default function AdminMessagesPage() {
     const fileType = file.type;
     const isImage = fileType.startsWith("image/");
     const isVideo = fileType.startsWith("video/");
-    const typeLabel = isVideo ? "video" : "photo";
+    const isDoc = !isImage && !isVideo;
+    const typeLabel = isVideo ? "video" : (isDoc ? "document" : "photo");
 
     // For the completely free option, we will store images natively inside the Realtime Database using Base64.
-    // This bypasses Firebase Storage entirely, requiring no plan upgrades or CORS configurations.
     if (isImage) {
       runBase64ImageFallback(file);
+      return;
+    }
+
+    if (isDoc) {
+      if (file.size > 4 * 1024 * 1024) {
+        alert("Document is too large. Max allowed size for free sharing is 4MB.");
+        return;
+      }
+      runBase64DocumentFallback(file);
       return;
     }
 
@@ -390,19 +413,27 @@ export default function AdminMessagesPage() {
         async () => {
           const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
           setUploadProgress(null);
-          await triggerSendMessage(downloadURL, typeLabel);
+          await triggerSendMessage(downloadURL, "video", { fileName: file.name });
           setSending(false);
         }
       );
       return;
     }
 
-    // B. Base64 fallback (Only for images)
-    if (isImage) {
-      runBase64ImageFallback(file);
-    } else {
-      alert("Sharing video files requires Firebase Storage.");
-    }
+    alert("Sharing video files requires Firebase Storage.");
+  };
+
+  const runBase64DocumentFallback = (file: File) => {
+    setSending(true);
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64Doc = reader.result as string;
+      if (base64Doc) {
+        await triggerSendMessage(base64Doc, "document", { fileName: file.name });
+      }
+      setSending(false);
+    };
+    reader.readAsDataURL(file);
   };
 
   const runBase64ImageFallback = (file: File) => {
@@ -466,12 +497,34 @@ export default function AdminMessagesPage() {
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || "audio/webm" });
-        const fileName = `voice_note_${Date.now()}.webm`;
+        const nativeType = audioChunksRef.current[0]?.type || "audio/mp4";
+        const audioBlob = new Blob(audioChunksRef.current, { type: nativeType });
+        const fileName = `voice_note_${Date.now()}.mp4`;
 
-        // We use the 100% free Realtime Database storage (Base64) for voice notes by default.
-        // This avoids Firebase Storage limits and CORS issues completely.
-        runBase64AudioFallback(audioBlob);
+        setSending(true);
+        try {
+          const { auth } = await import('@/lib/firebase').then(m => m.initFirebase());
+          const token = await auth.currentUser?.getIdToken();
+
+          const formData = new FormData();
+          formData.append("file", new File([audioBlob], fileName, { type: nativeType }));
+          formData.append("pathPrefix", `bridges/${(currentUser?.uid || "unknown")}`);
+
+          const res = await fetch("/api/upload", {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${token}` },
+            body: formData
+          });
+
+          if (!res.ok) throw new Error("Upload failed");
+          const data = await res.json();
+          
+          await triggerSendMessage(data.url, "audio", { fileName });
+        } catch (err: any) {
+          alert("Failed to upload audio: " + err.message);
+        } finally {
+          setSending(false);
+        }
       };
 
       mediaRecorder.start();
@@ -565,6 +618,18 @@ export default function AdminMessagesPage() {
     return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  const deleteMessage = async (msgId: string) => {
+    if (!confirm("Delete this message?")) return;
+    if (!rtdb || !activeChat || !currentUser) return;
+    const isClientChat = activeChat.role === "client";
+    const chatId = isClientChat ? `bridge_${activeChat.uid}` : [(currentUser?.uid || "unknown"), activeChat.uid].sort().join("_");
+    try {
+      await remove(ref(rtdb, `chats/${chatId}/messages/${msgId}`));
+    } catch (e: any) {
+      alert("Failed to delete message: " + e.message);
+    }
+  };
+
   const formatDate = (ts: number) => {
     if (!ts) return "";
     return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' });
@@ -654,7 +719,7 @@ export default function AdminMessagesPage() {
               filteredContacts.map(c => {
                 const meta = chatMetadata[c.uid] || {};
                 const isUserTyping = typing[c.uid];
-                const unreadCount = meta.unreadCount?.[currentUser.uid] || 0;
+                const unreadCount = meta.unreadCount?.[(currentUser?.uid || "unknown")] || 0;
 
                 return (
                   <div
@@ -730,6 +795,19 @@ export default function AdminMessagesPage() {
                   </div>
                 </div>
 
+                {currentUser.role === 'admin_msg_only' && (
+      <button
+        onClick={async () => {
+          const { auth } = await import('@/lib/firebase').then(m=>m.initFirebase());
+          await signOut(auth);
+          window.location.href = '/login';
+        }}
+        className="btn btn-sm btn-ghost"
+        style={{ borderRadius: 99, padding: '6px 12px', color: '#f87171' }}
+      >
+        🚪 Logout
+      </button>
+    )}
                 <button
                   onClick={() => setShowInfo(!showInfo)}
                   className={`btn btn-sm ${showInfo ? "btn-primary" : "btn-ghost"}`}
@@ -750,7 +828,7 @@ export default function AdminMessagesPage() {
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {messages.map((m, idx) => {
-                      let isMe = m.senderId === currentUser.uid;
+                      let isMe = m.senderId === (currentUser?.uid || "unknown");
                       const showDateHeader = idx === 0 || formatDate(m.timestamp) !== formatDate(messages[idx - 1]?.timestamp);
 
                       let senderTag = "";
@@ -773,7 +851,7 @@ export default function AdminMessagesPage() {
                           }
                         }
                       } else {
-                        isMe = m.senderId === currentUser.uid;
+                        isMe = m.senderId === (currentUser?.uid || "unknown");
                       }
 
                       return (
@@ -797,17 +875,35 @@ export default function AdminMessagesPage() {
                                 <div style={{ wordBreak: "break-word", fontSize: 13.5 }}>{m.text}</div>
                               ) : null}
 
+                              {/* Render photos */}
                               {m.type === "photo" && m.mediaData ? (
                                 <div style={{ marginTop: 2, borderRadius: 8, overflow: "hidden", cursor: "zoom-in" }}>
                                   <img
                                     src={m.mediaData}
                                     alt="Shared Asset"
-                                    style={{ maxWidth: "100%", maxHeight: 220, objectFit: "cover", borderRadius: 8, display: "block" }}
+                                    style={{ maxWidth: "100%", maxHeight: 250, objectFit: "cover", borderRadius: 8, display: "block" }}
                                     onClick={() => {
                                       const w = window.open();
                                       w?.document.write(`<img src="${m.mediaData}" style="max-width:100%; max-height:100vh; display:block; margin:auto;" />`);
                                     }}
                                   />
+                                </div>
+                              ) : null}
+
+                              {/* Render document */}
+                              {m.type === "document" && m.mediaData ? (
+                                <div style={{ marginTop: 2, borderRadius: 8, padding: 12, background: "rgba(0,0,0,0.2)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                    <div style={{ fontSize: 24 }}>📄</div>
+                                    <div style={{ flex: 1, overflow: "hidden" }}>
+                                      <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>
+                                        {m.fileName || "Document File"}
+                                      </div>
+                                    </div>
+                                    <a href={m.mediaData} download={m.fileName || "document"} style={{ textDecoration: "none", color: "#3b82f6", fontSize: 13, fontWeight: 700 }}>
+                                      Download
+                                    </a>
+                                  </div>
                                 </div>
                               ) : null}
 
@@ -833,26 +929,51 @@ export default function AdminMessagesPage() {
                                   >
                                     ⬇️ Download Video File
                                   </a>
-                                </div>
-                              ) : null}
-
-                              <div className="chat-bubble-footer">
-                                <span>{formatTime(m.timestamp)}</span>
-                                {isMe && (
-                                  <span
-                                    title={m.status === "read" && m.readTime ? `Read at ${new Date(m.readTime).toLocaleString()}` : m.status}
-                                    style={{ display: "flex", marginLeft: 4 }}
-                                  >
-                                    {m.status === "sent" ? (
-                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
-                                    ) : m.status === "delivered" ? (
-                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="3"><polyline points="17 6 8.5 15.5 5 12"/><polyline points="22 6 13.5 15.5 11 13"/></svg>
-                                    ) : (
-                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="3"><polyline points="17 6 8.5 15.5 5 12"/><polyline points="22 6 13.5 15.5 11 13"/></svg>
+                                  <div className="chat-bubble-footer" style={{ marginTop: 6, display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4 }}>
+                                    <span>{formatTime(m.timestamp)}{m.editedAt ? " (edited)" : ""}</span>
+                                    {isMe && (
+                                      <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                        {m.status === "sent" ? (
+                                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                                        ) : m.status === "delivered" ? (
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="3"><polyline points="17 6 8.5 15.5 5 12"/><polyline points="22 6 13.5 15.5 11 13"/></svg>
+                                        ) : (
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="3"><polyline points="17 6 8.5 15.5 5 12"/><polyline points="22 6 13.5 15.5 11 13"/></svg>
+                                        )}
+                                        <button 
+                                          onClick={() => deleteMessage(m.id)}
+                                          style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--text-muted)", marginLeft: 6, opacity: 0.8 }}
+                                          title="Delete Message"
+                                        >
+                                          🗑️
+                                        </button>
+                                      </span>
                                     )}
-                                  </span>
-                                )}
-                              </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="chat-bubble-footer" style={{ marginTop: 6, display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4 }}>
+                                  <span>{formatTime(m.timestamp)}{m.editedAt ? " (edited)" : ""}</span>
+                                  {isMe && (
+                                    <span style={{ display: "flex", alignItems: "center", gap: 6 }} title={m.status === "read" && m.readTime ? `Read at ${new Date(m.readTime).toLocaleString()}` : m.status}>
+                                      {m.status === "sent" ? (
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                                      ) : m.status === "delivered" ? (
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="3"><polyline points="17 6 8.5 15.5 5 12"/><polyline points="22 6 13.5 15.5 11 13"/></svg>
+                                      ) : (
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="3"><polyline points="17 6 8.5 15.5 5 12"/><polyline points="22 6 13.5 15.5 11 13"/></svg>
+                                      )}
+                                      <button 
+                                        onClick={() => deleteMessage(m.id)}
+                                        style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--text-muted)", marginLeft: 6, opacity: 0.8 }}
+                                        title="Delete Message"
+                                      >
+                                        🗑️
+                                      </button>
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -939,6 +1060,33 @@ export default function AdminMessagesPage() {
                         accept="image/*,video/*"
                         onChange={handlePhotoSelect}
                       />
+                      <input
+                        type="file"
+                        ref={cameraInputRef}
+                        style={{ display: "none" }}
+                        accept="image/*"
+                        capture="environment"
+                        onChange={handlePhotoSelect}
+                      />
+                      <input
+                        type="file"
+                        ref={docInputRef}
+                        style={{ display: "none" }}
+                        accept=".pdf,.doc,.docx,.xls,.xlsx,.txt"
+                        onChange={handlePhotoSelect}
+                      />
+                      
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ width: 42, height: 42, borderRadius: 10, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+                        onClick={() => cameraInputRef.current?.click()}
+                        disabled={sending}
+                        title="Camera Capture"
+                      >
+                        📸
+                      </button>
+
                       <button
                         type="button"
                         className="btn btn-secondary"
@@ -947,7 +1095,18 @@ export default function AdminMessagesPage() {
                         disabled={sending}
                         title="Share Media File"
                       >
-                        📷
+                        🖼️
+                      </button>
+
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ width: 42, height: 42, borderRadius: 10, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+                        onClick={() => docInputRef.current?.click()}
+                        disabled={sending}
+                        title="Attach Document"
+                      >
+                        📄
                       </button>
 
                       <button

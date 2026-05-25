@@ -62,7 +62,7 @@ async function verifyIdToken(idToken: string, apiKey: string): Promise<string> {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { clientId, senderId, senderRole, text = "", type = "text", mediaData = null } = body;
+    const { clientId, senderId, senderRole, text = "", type = "text", mediaData = null, editingMessageId = null } = body;
 
     if (!clientId || !senderId || !senderRole) {
       return NextResponse.json({ error: "Missing required fields: clientId, senderId, senderRole" }, { status: 400 });
@@ -227,6 +227,15 @@ export async function POST(request: Request) {
     // 8b. Write message + metadata via firebase-admin SDK (no REST auth issues)
     const rtdb = getRtdb();
     const chatRef = rtdb.ref(`chats/bridge_${clientId}`);
+
+    // Push new message
+    if (editingMessageId) {
+      await chatRef.child(`messages/${editingMessageId}`).update({
+        text: processedText,
+        editedAt: Date.now()
+      });
+      return NextResponse.json({ success: true, message: { id: editingMessageId, text: processedText } });
+    }
 
     // Push new message
     await chatRef.child("messages").push(msgPayload);

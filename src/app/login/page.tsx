@@ -62,6 +62,7 @@ function LoginForm() {
               if (role === "admin") router.push("/admin");
               else if (role === "head_editor") router.push("/head-editor");
               else if (role === "client") router.push("/client");
+              else if (role === "msg_only") router.push("/messages");
               else router.push("/editor");
             } else {
               setNeedsVerification(true);
@@ -237,6 +238,7 @@ function LoginForm() {
         if (role === "admin") router.push("/admin");
         else if (role === "head_editor") router.push("/head-editor");
         else if (role === "client") router.push("/client");
+              else if (role === "msg_only") router.push("/messages");
         else router.push("/editor");
       }
     } catch (err: any) {
@@ -293,6 +295,7 @@ function LoginForm() {
         if (role === "admin") router.push("/admin");
         else if (role === "head_editor") router.push("/head-editor");
         else if (role === "client") router.push("/client");
+              else if (role === "msg_only") router.push("/messages");
         else router.push("/editor");
       } else {
         setError("Invalid verification code. Please check your email and try again.");

@@ -93,7 +93,7 @@ export interface UserProfile {
   uid: string;
   email: string;
   name: string;
-  role: "admin" | "head_editor" | "editor" | "client";
+  role: string;
   sourced_by?: string;
   assignedEditorUid?: string;
   whatsappNumber?: string;

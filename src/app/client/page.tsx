@@ -1,9 +1,10 @@
 "use client";
 import React, { useEffect, useState, useRef } from "react";
+import ClientProjects from "@/components/ClientProjects";
 import { initFirebase } from "@/lib/firebase";
-import { onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
-import { ref, onValue, off, set, update, get } from "firebase/database";
+import { ref, onValue, off, set, update, get, remove } from "firebase/database";
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 
 interface Message {
@@ -11,10 +12,12 @@ interface Message {
   senderId: string;
   senderRole: string;
   text: string;
-  type?: "text" | "photo" | "audio" | "video";
-  mediaData?: string; // holds download URL or Base64 fallback payload
+  type?: "text" | "photo" | "audio" | "video" | "document";
+  mediaData?: string;
+  fileName?: string; // holds download URL or Base64 fallback payload
   timestamp: number;
   status: "sent" | "delivered" | "read";
+  editedAt?: number;
   readTime?: number;
 }
 
@@ -22,12 +25,14 @@ export default function ClientWorkspace() {
   const [user, setUser] = useState<any>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState("");
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [typing, setTyping] = useState<Record<string, boolean>>({});
   const [managerTyping, setManagerTyping] = useState(false);
   const [loading, setLoading] = useState(true);
   const [rtdb, setRtdb] = useState<any>(null);
   const [storageInstance, setStorageInstance] = useState<any>(null);
   const [sending, setSending] = useState(false);
+  const [view, setView] = useState<"chat" | "projects">("chat");
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   // Audio recording states
@@ -37,8 +42,10 @@ export default function ClientWorkspace() {
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<any>(null);
 
-  // Photo selection states
+  // Photo/Media selection states
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const docInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -135,8 +142,10 @@ export default function ClientWorkspace() {
     if (!inputText.trim() || !user || sending) return;
 
     setSending(true);
-    const textToSend = inputText;
+      const textToSend = inputText;
+      const editId = editingMessageId;
     setInputText("");
+    setEditingMessageId(null);
 
     // Clear typing status
     if (rtdb) {
@@ -159,7 +168,7 @@ export default function ClientWorkspace() {
           senderRole: "client",
           text: textToSend,
           type: "text"
-        })
+        , editingMessageId: editId})
       });
 
       if (!res.ok) {
@@ -175,7 +184,7 @@ export default function ClientWorkspace() {
   };
 
   // Helper function to dispatch secure messages
-  const triggerSendMessage = async (mediaUrl: string, type: "photo" | "audio" | "video") => {
+  const triggerSendMessage = async (mediaUrl: string, type: "photo" | "audio" | "video" | "document", extraData?: any) => {
     try {
       const { auth } = await initFirebase();
       const token = await auth.currentUser?.getIdToken();
@@ -192,7 +201,7 @@ export default function ClientWorkspace() {
           senderRole: "client",
           text: "",
           type,
-          mediaData: mediaUrl
+          mediaData: mediaUrl, fileName: extraData?.fileName
         })
       });
       if (!res.ok) {
@@ -212,50 +221,51 @@ export default function ClientWorkspace() {
     const fileType = file.type;
     const isImage = fileType.startsWith("image/");
     const isVideo = fileType.startsWith("video/");
-    const typeLabel = isVideo ? "video" : "photo";
+    const isDoc = !isImage && !isVideo;
+    const typeLabel = isVideo ? "video" : (isDoc ? "document" : "photo");
 
-    // B. Base64 fallback (Only for images, avoids Firebase Storage limit completely)
-    if (isImage) {
-      runBase64ImageFallback(file);
+    if (file.size > 20 * 1024 * 1024) {
+      alert("File is too large. Max allowed size is 20MB.");
       return;
     }
 
-    // A. Native Cloud Storage upload for Videos (Requires Firebase Storage setup)
-    if (storageInstance) {
-      setSending(true);
-      setUploadProgress(0);
+    setSending(true);
+    try {
+      const { auth } = await import('@/lib/firebase').then(m => m.initFirebase());
+      const token = await auth.user?.getIdToken();
 
-      const path = `bridges/${user.uid}/${Date.now()}_${file.name}`;
-      const sRef = storageRef(storageInstance, path);
-      const uploadTask = uploadBytesResumable(sRef, file);
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("pathPrefix", `bridges/${user.uid}`);
 
-      uploadTask.on("state_changed",
-        (snap) => {
-          const progress = (snap.bytesTransferred / snap.totalBytes) * 100;
-          setUploadProgress(Math.round(progress));
-        },
-        async (error) => {
-          console.error("Cloud storage upload failed:", error);
-          setUploadProgress(null);
-          alert("Video uploads require Firebase Storage activation. Please verify your Firebase project console.");
-          setSending(false);
-        },
-        async () => {
-          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-          setUploadProgress(null);
-          await triggerSendMessage(downloadURL, typeLabel);
-          setSending(false);
-        }
-      );
-      return;
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` },
+        body: formData
+      });
+
+      if (!res.ok) throw new Error("Upload failed");
+      const data = await res.json();
+      
+      await triggerSendMessage(data.url, typeLabel, { fileName: file.name });
+    } catch (err: any) {
+      alert("Failed to upload media: " + err.message);
+    } finally {
+      setSending(false);
     }
+  };
 
-    // B. Base64 fallback (Only for images)
-    if (isImage) {
-      runBase64ImageFallback(file);
-    } else {
-      alert("Sharing raw video files requires Cloud Storage configuration. Fallback restricted to photos.");
-    }
+  const runBase64DocumentFallback = (file: File) => {
+    setSending(true);
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64Doc = reader.result as string;
+      if (base64Doc) {
+        await triggerSendMessage(base64Doc, "document", { fileName: file.name });
+      }
+      setSending(false);
+    };
+    reader.readAsDataURL(file);
   };
 
   // Base64 Photo fallback compressor
@@ -320,10 +330,34 @@ export default function ClientWorkspace() {
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || "audio/webm" });
-        const fileName = `voice_note_${Date.now()}.webm`;
-        // B. Base64 Audio fallback (100% Free option, skips Firebase Storage limits)
-        runBase64AudioFallback(audioBlob);
+        const nativeType = audioChunksRef.current[0]?.type || "audio/mp4";
+        const audioBlob = new Blob(audioChunksRef.current, { type: nativeType });
+        const fileName = `voice_note_${Date.now()}.mp4`;
+
+        setSending(true);
+        try {
+          const { auth } = await import('@/lib/firebase').then(m => m.initFirebase());
+          const token = await auth.currentUser?.getIdToken();
+
+          const formData = new FormData();
+          formData.append("file", new File([audioBlob], fileName, { type: nativeType }));
+          formData.append("pathPrefix", `bridges/${user.uid}`);
+
+          const res = await fetch("/api/upload", {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${token}` },
+            body: formData
+          });
+
+          if (!res.ok) throw new Error("Upload failed");
+          const data = await res.json();
+          
+          await triggerSendMessage(data.url, "audio", { fileName });
+        } catch (err: any) {
+          alert("Failed to upload audio: " + err.message);
+        } finally {
+          setSending(false);
+        }
       };
 
       mediaRecorder.start();
@@ -377,6 +411,16 @@ export default function ClientWorkspace() {
     return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
 
+  const deleteMessage = async (msgId: string) => {
+    if (!confirm("Delete this message?")) return;
+    if (!rtdb || !user) return;
+    try {
+      await remove(ref(rtdb, `chats/bridge_${user.uid}/messages/${msgId}`));
+    } catch (e: any) {
+      alert("Failed to delete message: " + e.message);
+    }
+  };
+
   if (loading || !user) {
     return (
       <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)" }}>
@@ -386,7 +430,7 @@ export default function ClientWorkspace() {
   }
 
   return (
-    <div className="chat-layout animate-fade" style={{ height: "calc(100vh - 64px)" }}>
+    <div className="chat-layout client-workspace animate-fade" style={{ height: "calc(100vh - 64px)" }}>
       {/* Floating Progress Bar Banner */}
       {uploadProgress !== null && (
         <div style={{
@@ -418,7 +462,7 @@ export default function ClientWorkspace() {
               💼
             </div>
             <div>
-              <div style={{ fontWeight: 700, fontSize: 13.5, color: "var(--text)" }}>Agency Manager</div>
+              <div style={{ fontWeight: 700, fontSize: 13.5, color: "var(--text)" }}>Admin</div>
               <div style={{ fontSize: 11.5, color: "#a78bfa", marginTop: 2, display: "flex", alignItems: "center", gap: 5 }}>
                 <span className="live-dot" style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981", display: "inline-block" }}></span>
                 Securely Connected
@@ -438,7 +482,18 @@ export default function ClientWorkspace() {
       </div>
 
       {/* Main chat window */}
-      <div className="chat-main">
+      <div className="flex-1 flex flex-col bg-white overflow-hidden">
+        <div style={{ display: "flex", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", padding: "10px 20px", gap: 20 }}>
+          <button onClick={() => setView("chat")} style={{ fontWeight: view === "chat" ? "bold" : "normal", color: view === "chat" ? "var(--primary)" : "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: "5px 0" }}>Chat</button>
+          <button onClick={() => setView("projects")} style={{ fontWeight: view === "projects" ? "bold" : "normal", color: view === "projects" ? "var(--primary)" : "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: "5px 0" }}>Projects</button>
+        </div>
+        
+        {view === "projects" ? (
+          <div style={{ flex: 1, overflowY: "auto", background: "#f9fafb" }}>
+            <ClientProjects user={user} />
+          </div>
+        ) : (
+        <div className="flex flex-col h-full overflow-hidden">
         {/* Header */}
         <div className="chat-header">
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -446,7 +501,7 @@ export default function ClientWorkspace() {
               💼
             </div>
             <div>
-              <div style={{ fontWeight: 700, fontSize: 14 }}>Agency Manager</div>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>Admin</div>
               <div style={{ fontSize: 11.5, color: "var(--text-muted)" }}>
                 {managerTyping ? (
                   <span style={{ color: "#a78bfa", fontWeight: 600 }}>typing…</span>
@@ -501,6 +556,23 @@ export default function ClientWorkspace() {
                         </div>
                       ) : null}
 
+                      {/* Render document */}
+                      {m.type === "document" && m.mediaData ? (
+                        <div style={{ marginTop: 2, borderRadius: 8, padding: 12, background: "rgba(0,0,0,0.2)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <div style={{ fontSize: 24 }}>📄</div>
+                            <div style={{ flex: 1, overflow: "hidden" }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>
+                                {m.fileName || "Document File"}
+                              </div>
+                            </div>
+                            <a href={m.mediaData} download={m.fileName || "document"} style={{ textDecoration: "none", color: "#3b82f6", fontSize: 13, fontWeight: 700 }}>
+                              Download
+                            </a>
+                          </div>
+                        </div>
+                      ) : null}
+
                       {/* Render custom Voice Note player */}
                       {m.type === "audio" && m.mediaData ? (
                         <div style={{ marginTop: 2, width: 220, padding: "8px 12px", background: "rgba(0,0,0,0.2)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.05)" }}>
@@ -539,9 +611,9 @@ export default function ClientWorkspace() {
                       ) : null}
 
                       <div className="chat-bubble-footer" style={{ marginTop: 6, display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4 }}>
-                        <span>{formatTime(m.timestamp)}</span>
+                        <span>{formatTime(m.timestamp)}{m.editedAt ? " (edited)" : ""}</span>
                         {isMe && (
-                          <span style={{ display: "flex" }}>
+                          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                             {m.status === "sent" ? (
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
                             ) : m.status === "delivered" ? (
@@ -549,6 +621,14 @@ export default function ClientWorkspace() {
                             ) : (
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="3"><polyline points="17 6 8.5 15.5 5 12"/><polyline points="22 6 13.5 15.5 11 13"/></svg>
                             )}
+                            <button onClick={() => { setEditingMessageId(m.id); setInputText(m.text || ''); }} title="Edit Message" style={{ background: 'none', border: 'none', color: '#a78bfa', cursor: 'pointer', fontSize: 13, padding: 2, display: 'flex' }}>✏️</button>
+                        <button 
+                              onClick={() => deleteMessage(m.id)}
+                              style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--text-muted)", marginLeft: 6, opacity: 0.8 }}
+                              title="Delete Message"
+                            >
+                              🗑️
+                            </button>
                           </span>
                         )}
                       </div>
@@ -602,6 +682,33 @@ export default function ClientWorkspace() {
                 accept="image/*,video/*"
                 onChange={handleFileSelect}
               />
+              <input
+                type="file"
+                ref={cameraInputRef}
+                style={{ display: "none" }}
+                accept="image/*"
+                capture="environment"
+                onChange={handleFileSelect}
+              />
+              <input
+                type="file"
+                ref={docInputRef}
+                style={{ display: "none" }}
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.txt"
+                onChange={handleFileSelect}
+              />
+
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ width: 42, height: 42, borderRadius: 10, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+                onClick={() => cameraInputRef.current?.click()}
+                title="Camera Capture"
+                disabled={sending}
+              >
+                📸
+              </button>
+
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -610,7 +717,18 @@ export default function ClientWorkspace() {
                 title="Share Media Asset (Photos / Videos)"
                 disabled={sending}
               >
-                📷
+                🖼️
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ width: 42, height: 42, borderRadius: 10, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+                onClick={() => docInputRef.current?.click()}
+                title="Attach Document"
+                disabled={sending}
+              >
+                📄
               </button>
 
               <button
@@ -643,6 +761,8 @@ export default function ClientWorkspace() {
             </form>
           )}
         </div>
+        </div>
+        )}
       </div>
     </div>
   );

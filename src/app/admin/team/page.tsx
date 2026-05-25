@@ -29,7 +29,7 @@ export default function AdminTeam() {
     email: "",
     whatsappNumber: "",
     password: "",
-    role: "editor" as "editor" | "head_editor" | "client" | "admin",
+    role: "editor" as string,
     sourced_by: "",
     assignedEditorUid: ""
   });
@@ -39,7 +39,7 @@ export default function AdminTeam() {
   const [editForm, setEditForm] = useState({
     name: "",
     email: "",
-    role: "editor" as "admin" | "head_editor" | "editor" | "client",
+    role: "editor" as string,
     sourced_by: "",
     whatsappNumber: "",
     isBanned: false
