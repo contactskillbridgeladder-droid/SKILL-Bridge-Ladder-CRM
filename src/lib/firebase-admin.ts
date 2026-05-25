@@ -77,6 +77,7 @@ export async function getAccessToken(): Promise<string> {
       "https://www.googleapis.com/auth/cloud-platform",
       "https://www.googleapis.com/auth/firebase",
       "https://www.googleapis.com/auth/firebase.database",
+      "https://www.googleapis.com/auth/firebase.messaging",
     ],
   });
   const client = await auth.getClient();
