@@ -4,7 +4,7 @@ import { initFirebase } from "@/lib/firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { getUsers, UserProfile } from "@/lib/firestore";
 import { useRouter } from "next/navigation";
-import { ref, set, push, onValue, off, update, get, remove } from "firebase/database";
+import { ref, set, push, onValue, off, update, get, remove, query, limitToLast } from "firebase/database";
 import { doc, updateDoc } from "firebase/firestore";
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 
@@ -167,7 +167,8 @@ export default function AdminMessagesPage() {
     });
 
     // Listen to messages
-    onValue(messagesRef, snap => {
+    const recentQuery = query(messagesRef, limitToLast(50));
+    onValue(recentQuery, snap => {
       const msgs: Message[] = [];
       if (snap.exists()) {
         const data = snap.val();
@@ -413,7 +414,7 @@ export default function AdminMessagesPage() {
         async () => {
           const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
           setUploadProgress(null);
-          await triggerSendMessage(downloadURL, "video", { fileName: file.name });
+          await triggerSendMessage(downloadURL, "video");
           setSending(false);
         }
       );
@@ -503,24 +504,18 @@ export default function AdminMessagesPage() {
 
         setSending(true);
         try {
-          const { auth } = await import('@/lib/firebase').then(m => m.initFirebase());
-          const token = await auth.currentUser?.getIdToken();
-
-          const formData = new FormData();
-          formData.append("file", new File([audioBlob], fileName, { type: nativeType }));
-          formData.append("pathPrefix", `bridges/${(currentUser?.uid || "unknown")}`);
-
-          const res = await fetch("/api/upload", {
-            method: "POST",
-            headers: { "Authorization": `Bearer ${token}` },
-            body: formData
-          });
-
-          if (!res.ok) throw new Error("Upload failed");
-          const data = await res.json();
+          const { storage } = await import('@/lib/firebase').then(m => m.initFirebase());
+          const { ref: sRef, uploadBytes, getDownloadURL } = await import('firebase/storage');
           
-          await triggerSendMessage(data.url, "audio", { fileName });
+          const pathPrefix = `bridges/${currentUser?.uid || "unknown"}`;
+          const storageRefNode = sRef(storage, `${pathPrefix}/${fileName}`);
+          
+          await uploadBytes(storageRefNode, audioBlob, { contentType: nativeType });
+          const publicUrl = await getDownloadURL(storageRefNode);
+          
+          await triggerSendMessage(publicUrl, "audio");
         } catch (err: any) {
+          console.error("Audio Upload Error:", err);
           alert("Failed to upload audio: " + err.message);
         } finally {
           setSending(false);
@@ -562,6 +557,7 @@ export default function AdminMessagesPage() {
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream.getTracks().forEach((track: any) => track.stop());
       setIsRecording(false);
       clearInterval(recordingTimerRef.current);
     }
