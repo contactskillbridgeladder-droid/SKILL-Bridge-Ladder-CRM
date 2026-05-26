@@ -103,6 +103,7 @@ export async function POST(request: Request) {
       taskTitle, channel, taskType, due, pay, profileLink, amount, assignedEditors,
       // Multi-recipient
       recipients, // array of { uid, email, name } for broadcasting
+      emailOnly = false,
     } = body;
 
     if (!title || !message) {
@@ -123,16 +124,20 @@ export async function POST(request: Request) {
     for (const recipient of recipientList) {
       const { uid, email, name } = recipient;
 
-      // 1. In-app Firestore notification
-      const notifId = await writeFirestoreNotif(token, uid, { type, title, message, ctaLink });
+      let notifId = null;
 
-      // 2. FCM push notification (if user has registered tokens)
-      const fcmTokens = await getUserFCMTokens(token, uid);
-      for (const fcmToken of fcmTokens) {
-        await sendFCMPush(token, fcmToken, { 
-          title, body: message, url: ctaLink, type, 
-          chatId: body.chatId || "", recipientId: uid 
-        });
+      // Only write Firestore notif and send push if emailOnly is not true
+      if (!emailOnly) {
+        notifId = await writeFirestoreNotif(token, uid, { type, title, message, ctaLink });
+
+        // 2. FCM push notification (if user has registered tokens)
+        const fcmTokens = await getUserFCMTokens(token, uid);
+        for (const fcmToken of fcmTokens) {
+          await sendFCMPush(token, fcmToken, { 
+            title, body: message, url: ctaLink, type, 
+            chatId: body.chatId || "", recipientId: uid 
+          });
+        }
       }
 
       // 3. Build typed email HTML

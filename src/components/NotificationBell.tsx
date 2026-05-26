@@ -85,10 +85,10 @@ export default function NotificationBell({ uid }: { uid: string }) {
   const togglePanel = () => {
     if (!open && bellRef.current) {
       const rect = bellRef.current.getBoundingClientRect();
-      // Position dropdown ABOVE the bell, anchored to its right edge
+      // Position dropdown ABOVE the bell, anchored to its left edge (extending to the right)
       setDropPos({
         top: rect.top - 8, // 8px gap above the bell
-        left: Math.min(rect.right, window.innerWidth - 16), // right-aligned, stay in viewport
+        left: Math.max(16, rect.left), // left-aligned, stay in viewport
       });
     }
     setOpen(!open);
@@ -115,7 +115,7 @@ export default function NotificationBell({ uid }: { uid: string }) {
           <div style={{
             position: "fixed",
             bottom: `calc(100vh - ${dropPos.top}px)`,
-            right: `calc(100vw - ${dropPos.left}px)`,
+            left: `${dropPos.left}px`,
             width: 370,
             maxWidth: "calc(100vw - 24px)",
             maxHeight: "min(500px, 70vh)",

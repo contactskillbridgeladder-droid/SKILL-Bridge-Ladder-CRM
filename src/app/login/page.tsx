@@ -228,7 +228,8 @@ function LoginForm() {
               title: "🔒 Security Alert: New Login Detected",
               message: `We detected a new login to your SkillBridge CRM account on ${timeString} (IST).\n\nDevice details:\n${userAgent}\n\nIf this was you, no further action is required.`,
               type: "general",
-              subject: "Security Alert: New Login Detected"
+              subject: "Security Alert: New Login Detected",
+              emailOnly: true
             })
           }).catch((e) => console.error("Async login notify failed:", e));
         } catch (alertErr) {
