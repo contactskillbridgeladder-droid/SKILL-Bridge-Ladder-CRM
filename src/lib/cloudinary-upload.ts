@@ -4,7 +4,8 @@ export const uploadToCloudinary = async (
   onProgress?: (progress: number) => void
 ): Promise<string> => {
   try {
-    const signRes = await fetch('/api/cloudinary/sign', { method: 'POST' });
+    const workerUrl = process.env.NEXT_PUBLIC_CF_WORKER_URL || "https://skillbridge-crm-env.contact-skillbridgeladder.workers.dev";
+    const signRes = await fetch(`${workerUrl}/cloudinary/sign`, { method: 'POST' });
     const signData = await signRes.json();
     
     if (!signRes.ok) {
@@ -13,12 +14,12 @@ export const uploadToCloudinary = async (
     
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("api_key", process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY || "989943544584715");
+    formData.append("api_key", signData.apiKey || process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY || "989943544584715");
     formData.append("timestamp", signData.timestamp.toString());
     formData.append("signature", signData.signature);
     formData.append("folder", signData.folder);
 
-    const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "dzmfmuwn5";
+    const cloudName = signData.cloudName || process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "dzmfmuwn5";
     
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();

@@ -13,6 +13,9 @@ export interface Env {
   RESEND_API_KEY: string;
   GEMINI_API_KEY: string;
   WORKER_AUTH_SECRET: string; // Secure token for /config/secrets — NOT the public API key
+  CLOUDINARY_API_KEY: string;
+  CLOUDINARY_API_SECRET: string;
+  CLOUDINARY_CLOUD_NAME: string;
 }
 
 // ── Allowed origins (strict whitelist) ───────────────────────────────────────
@@ -204,6 +207,42 @@ export default {
           status: 500, headers,
         });
       }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // POST /cloudinary/sign — Generate signature for browser-to-Cloudinary uploads
+    // ═══════════════════════════════════════════════════════════════════════════
+    if (request.method === "POST" && url.pathname === "/cloudinary/sign") {
+      if (!isAllowedOrigin(origin)) {
+        return new Response(JSON.stringify({ error: "Origin not allowed." }), {
+          status: 403, headers,
+        });
+      }
+      
+      if (!env.CLOUDINARY_API_SECRET) {
+        return new Response(JSON.stringify({ error: "Cloudinary secrets not configured in Worker" }), { status: 500, headers });
+      }
+
+      const timestamp = Math.round(Date.now() / 1000);
+      const folder = "skillbridge_crm";
+      
+      // Cloudinary signature: sort parameters alphabetically, append secret, SHA-1
+      const stringToSign = `folder=${folder}&timestamp=${timestamp}${env.CLOUDINARY_API_SECRET}`;
+      
+      const msgBuffer = new TextEncoder().encode(stringToSign);
+      const hashBuffer = await crypto.subtle.digest("SHA-1", msgBuffer);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const signature = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+
+      return new Response(JSON.stringify({
+        timestamp,
+        signature,
+        folder,
+        cloudName: env.CLOUDINARY_CLOUD_NAME,
+        apiKey: env.CLOUDINARY_API_KEY
+      }), {
+        status: 200, headers,
+      });
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
