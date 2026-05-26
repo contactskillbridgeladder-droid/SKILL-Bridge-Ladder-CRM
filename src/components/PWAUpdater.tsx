@@ -46,6 +46,15 @@ export default function PWAUpdater() {
     });
   }, []);
 
+  useEffect(() => {
+    if (show && !updating) {
+      const timer = setTimeout(() => {
+        handleDismiss();
+      }, 7000); // Auto dismiss after 7 seconds
+      return () => clearTimeout(timer);
+    }
+  }, [show, updating]);
+
   const handleUpdate = async () => {
     setUpdating(true);
     try {
@@ -57,11 +66,8 @@ export default function PWAUpdater() {
         await new Promise((r) => setTimeout(r, 400));
       }
 
-      // 2. Clear all SW caches so the reload fetches fresh assets
-      if ("caches" in window) {
-        const names = await caches.keys();
-        await Promise.all(names.map((n) => caches.delete(n)));
-      }
+      // 2. We let Workbox handle the cache clearing automatically upon activation
+      // to ensure the app remains fully available offline.
 
       // 3. Hard reload — applies update even if SW lifecycle stalled
       window.location.reload();

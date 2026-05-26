@@ -25,6 +25,7 @@ export default function ClientWorkspace() {
   const [user, setUser] = useState<any>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState("");
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [typing, setTyping] = useState<Record<string, boolean>>({});
   const [managerTyping, setManagerTyping] = useState(false);
@@ -603,14 +604,8 @@ export default function ClientWorkspace() {
                             ) : (
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="3"><polyline points="17 6 8.5 15.5 5 12"/><polyline points="22 6 13.5 15.5 11 13"/></svg>
                             )}
-                            <button onClick={() => { setEditingMessageId(m.id); setInputText(m.text || ''); }} title="Edit Message" style={{ background: 'none', border: 'none', color: '#a78bfa', cursor: 'pointer', fontSize: 13, padding: 2, display: 'flex' }}>✏️</button>
-                        <button 
-                              onClick={() => deleteMessage(m.id)}
-                              style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--text-muted)", marginLeft: 6, opacity: 0.8 }}
-                              title="Delete Message"
-                            >
-                              🗑️
-                            </button>
+                            
+                        
                           </span>
                         )}
                       </div>

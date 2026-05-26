@@ -210,39 +210,46 @@ export default {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // POST /cloudinary/sign — Generate signature for browser-to-Cloudinary uploads
-    // ═══════════════════════════════════════════════════════════════════════════
-    if (request.method === "POST" && url.pathname === "/cloudinary/sign") {
-      if (!isAllowedOrigin(origin)) {
-        return new Response(JSON.stringify({ error: "Origin not allowed." }), {
-          status: 403, headers,
+    // POST /cloudinary/sign - Generate signature for browser-to-Cloudinary uploads
+    // --------------------------------------------------------------------------------------
+    if (url.pathname === "/cloudinary/sign") {
+      const publicCorsHeaders = {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      };
+
+      if (request.method === "OPTIONS") {
+        return new Response(null, { status: 204, headers: publicCorsHeaders });
+      }
+
+      if (request.method === "POST") {
+        if (!env.CLOUDINARY_API_SECRET) {
+          return new Response(JSON.stringify({ error: "Cloudinary secrets not configured in Worker" }), { status: 500, headers: publicCorsHeaders });
+        }
+
+        const timestamp = Math.round(Date.now() / 1000);
+        const folder = "skillbridge_crm";
+        
+        // Cloudinary signature: sort parameters alphabetically, append secret, SHA-1
+        const stringToSign = `folder=${folder}&timestamp=${timestamp}${env.CLOUDINARY_API_SECRET}`;
+        
+        const msgBuffer = new TextEncoder().encode(stringToSign);
+        const hashBuffer = await crypto.subtle.digest("SHA-1", msgBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const signature = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+
+        return new Response(JSON.stringify({
+          timestamp,
+          signature,
+          folder,
+          cloudName: env.CLOUDINARY_CLOUD_NAME,
+          apiKey: env.CLOUDINARY_API_KEY
+        }), {
+          status: 200, headers: publicCorsHeaders,
         });
       }
-      
-      if (!env.CLOUDINARY_API_SECRET) {
-        return new Response(JSON.stringify({ error: "Cloudinary secrets not configured in Worker" }), { status: 500, headers });
-      }
-
-      const timestamp = Math.round(Date.now() / 1000);
-      const folder = "skillbridge_crm";
-      
-      // Cloudinary signature: sort parameters alphabetically, append secret, SHA-1
-      const stringToSign = `folder=${folder}&timestamp=${timestamp}${env.CLOUDINARY_API_SECRET}`;
-      
-      const msgBuffer = new TextEncoder().encode(stringToSign);
-      const hashBuffer = await crypto.subtle.digest("SHA-1", msgBuffer);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      const signature = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
-
-      return new Response(JSON.stringify({
-        timestamp,
-        signature,
-        folder,
-        cloudName: env.CLOUDINARY_CLOUD_NAME,
-        apiKey: env.CLOUDINARY_API_KEY
-      }), {
-        status: 200, headers,
-      });
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

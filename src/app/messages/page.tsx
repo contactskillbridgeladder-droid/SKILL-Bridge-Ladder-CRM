@@ -38,6 +38,7 @@ export default function MessagesPage() {
   const [activeChat, setActiveChat] = useState<UserProfile | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState("");
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [typing, setTyping] = useState<Record<string, boolean>>({});
   const [chatMetadata, setChatMetadata] = useState<Record<string, ChatMetadata>>({});
@@ -288,6 +289,13 @@ export default function MessagesPage() {
   };
 
   // Send Message
+  
+  const handleEditClick = (m: any) => {
+    setEditingMessageId(m.id);
+    setInputText(m.text || "");
+    setMenuOpenId(null);
+  };
+
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim() || !currentUser || !activeChat || !rtdb || sending) return;
@@ -810,74 +818,23 @@ export default function MessagesPage() {
                                 </div>
                               )}
 
-                              <div className={`chat-message-bubble-wrapper ${isMe ? "sent" : "received"}`}>
-                                <div className={`chat-bubble ${isMe ? "sent" : "received"}`}>
-                                  
-                                  {(m.type === "text" || !m.type) ? (
-                                    <div style={{ wordBreak: "break-word", fontSize: 13.5 }}>{m.text}</div>
-                                  ) : null}
-
-                                  {m.type === "photo" && m.mediaData ? (
-                                    <div style={{ marginTop: 2, borderRadius: 8, overflow: "hidden", cursor: "zoom-in" }}>
-                                      <img
-                                        src={m.mediaData}
-                                        alt="Shared Asset"
-                                        style={{ maxWidth: "100%", maxHeight: 220, objectFit: "cover", borderRadius: 8, display: "block" }}
-                                        onClick={() => {
-                                          const w = window.open();
-                                          w?.document.write(`<img src="${m.mediaData}" style="max-width:100%; max-height:100vh; display:block; margin:auto;" />`);
-                                        }}
-                                      />
-                                    </div>
-                                  ) : null}
-
-                                  {m.type === "audio" && m.mediaData ? (
-                                    <div style={{ marginTop: 2, width: 220, padding: "8px 12px", background: "rgba(0,0,0,0.2)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.05)" }}>
-                                      <audio src={m.mediaData} controls style={{ width: "100%", height: 32 }} />
-                                    </div>
-                                  ) : null}
-
-                                  {/* Render videos */}
-                                  {m.type === "video" && m.mediaData ? (
-                                    <div style={{ marginTop: 2, borderRadius: 8, overflow: "hidden", width: "100%", maxWidth: 320, background: "rgba(0,0,0,0.2)", border: "1px solid rgba(255,255,255,0.05)", padding: 8 }}>
-                                      <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, display: "flex", alignItems: "center", gap: 5 }}>
-                                        🎥 Video Draft
-                                      </div>
-                                      <video src={m.mediaData} controls style={{ width: "100%", borderRadius: 6, display: "block" }} />
-                                      <a 
-                                        href={m.mediaData} 
-                                        target="_blank" 
-                                        rel="noopener noreferrer" 
-                                        className="btn btn-secondary btn-sm" 
-                                        style={{ width: "100%", marginTop: 8, height: 28, fontSize: 11.5, justifyContent: "center", textDecoration: "none" }}
-                                      >
-                                        ⬇️ Download Video File
-                                      </a>
-                                    </div>
-                                  ) : null}
-
-                                  <div className="chat-bubble-footer">
-                                    <span>{formatTime(m.timestamp)}{m.editedAt ? " (edited)" : ""}</span>
-                                    {isMe && (
-                                      <span
-                                        title={m.status === "read" && m.readTime ? `Read at ${new Date(m.readTime).toLocaleString()}` : m.status}
-                                        style={{ display: "flex", marginLeft: 4 }}
-                                      >
-                                        {m.status === "sent" ? (
-                                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
-                                        ) : m.status === "delivered" ? (
-                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="3"><polyline points="17 6 8.5 15.5 5 12"/><polyline points="22 6 13.5 15.5 11 13"/></svg>
-                                        ) : (
-                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="3"><polyline points="17 6 8.5 15.5 5 12"/><polyline points="22 6 13.5 15.5 11 13"/></svg>
-                                        )}
-                                      </span>
+                              
+                            <div className={`chat-message-bubble-wrapper ${isMe ? "sent" : "received"}`} style={{ position: "relative" }} onContextMenu={(e) => { e.preventDefault(); setMenuOpenId(menuOpenId === m.id ? null : m.id); }}>
+                              
+                              <div style={{ position: "absolute", top: 4, [isMe ? 'right' : 'left']: isMe ? "100%" : "100%", padding: "0 8px", zIndex: 5 }}>
+                                <button 
+                                  onClick={() => setMenuOpenId(menuOpenId === m.id ? null : m.id)} 
+                                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 18, padding: "0 4px", display: "flex", alignItems: "center", justifyContent: "center", height: 32, opacity: 0.6 }}
+                                  title="Options"
+                                >
+                                  ⋮
+                                </button>
+                                {menuOpenId === m.id && (
+                                  <div style={{ position: "absolute", top: "100%", [isMe ? 'right' : 'left']: 0, background: "var(--bg-card)", border: "1px solid var(--border-bright)", borderRadius: 8, padding: 4, zIndex: 50, display: "flex", flexDirection: "column", gap: 4, minWidth: 100, boxShadow: "0 4px 12px rgba(0,0,0,0.2)" }}>
+                                    {(isMe && (m.type === "text" || !m.type)) && (
+                                      <button onClick={() => handleEditClick(m)} style={{ background: "none", border: "none", padding: "8px 12px", textAlign: "left", fontSize: 13, cursor: "pointer", color: "var(--text)", width: "100%", borderRadius: 6 }} onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'} onMouseOut={e => e.currentTarget.style.background = 'none'}>Edit</button>
                                     )}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
+                                    }
                         <div ref={messagesEndRef} />
                       </div>
                     )}
