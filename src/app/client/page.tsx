@@ -5,7 +5,7 @@ import { initFirebase } from "@/lib/firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { ref, onValue, off, set, update, get, remove, query, limitToLast } from "firebase/database";
-import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { uploadToCloudinary } from "@/lib/cloudinary-upload";
 
 interface Message {
   id: string;
@@ -232,27 +232,13 @@ export default function ClientWorkspace() {
 
     setSending(true);
     try {
-      const { auth } = await import('@/lib/firebase').then(m => m.initFirebase());
-      const token = await auth.user?.getIdToken();
-
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("pathPrefix", `bridges/${user.uid}`);
-
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${token}` },
-        body: formData
-      });
-
-      if (!res.ok) throw new Error("Upload failed");
-      const data = await res.json();
-      
-      await triggerSendMessage(data.url, typeLabel, { fileName: file.name });
+      const publicUrl = await uploadToCloudinary(file, isVideo ? "video" : "auto", (p) => setUploadProgress(p));
+      await triggerSendMessage(publicUrl, typeLabel, { fileName: file.name });
     } catch (err: any) {
       alert("Failed to upload media: " + err.message);
     } finally {
       setSending(false);
+      setUploadProgress(null);
     }
   };
 
@@ -339,20 +325,12 @@ export default function ClientWorkspace() {
         const nativeType = audioChunksRef.current[0]?.type || "audio/webm";
         const ext = nativeType.includes("mp4") ? "mp4" : "webm";
         const audioBlob = new Blob(audioChunksRef.current, { type: nativeType });
-        const fileName = `voice_note_${Date.now()}.${ext}`;
+        const fileName = `voice_note_${Date.now()}`;
 
         setSending(true);
         try {
-          const { storage } = await import('@/lib/firebase').then(m => m.initFirebase());
-          const { ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
-          
-          const pathPrefix = `bridges/${user.uid}`;
-          const storageRef = ref(storage, `${pathPrefix}/${fileName}`);
-          
-          await uploadBytes(storageRef, audioBlob, { contentType: nativeType });
-          const publicUrl = await getDownloadURL(storageRef);
-          
-          await triggerSendMessage(publicUrl, "audio", { fileName });
+          const publicUrl = await uploadToCloudinary(audioBlob, "video");
+          await triggerSendMessage(publicUrl, "audio");
         } catch (err: any) {
           console.error("Audio Upload Error:", err);
           alert("Failed to upload audio: " + err.message);

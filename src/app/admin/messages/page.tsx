@@ -6,7 +6,7 @@ import { getUsers, UserProfile } from "@/lib/firestore";
 import { useRouter } from "next/navigation";
 import { ref, set, push, onValue, off, update, get, remove, query, limitToLast } from "firebase/database";
 import { doc, updateDoc } from "firebase/firestore";
-import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { uploadToCloudinary } from "@/lib/cloudinary-upload";
 
 interface Message {
   id: string;
@@ -391,33 +391,21 @@ export default function AdminMessagesPage() {
       return;
     }
 
-    // A. Native Cloud Storage upload for Videos (Requires Firebase Storage setup)
+    // A. Native Cloud Storage upload with progress bar
     if (storageInstance && activeChat) {
       setSending(true);
       setUploadProgress(0);
 
-      const path = `bridges/${activeChat.uid}/${Date.now()}_${file.name}`;
-      const sRef = storageRef(storageInstance, path);
-      const uploadTask = uploadBytesResumable(sRef, file);
-
-      uploadTask.on("state_changed",
-        (snap) => {
-          const progress = (snap.bytesTransferred / snap.totalBytes) * 100;
-          setUploadProgress(Math.round(progress));
-        },
-        async (error) => {
-          console.error("Cloud storage upload failed:", error);
-          setUploadProgress(null);
-          alert("Video sharing failed. Configure Firebase Storage.");
-          setSending(false);
-        },
-        async () => {
-          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-          setUploadProgress(null);
-          await triggerSendMessage(downloadURL, "video");
-          setSending(false);
-        }
-      );
+      try {
+        const downloadURL = await uploadToCloudinary(file, isVideo ? "video" : "auto", (p) => setUploadProgress(p));
+        setUploadProgress(null);
+        await triggerSendMessage(downloadURL, isVideo ? "video" : "photo");
+      } catch (error: any) {
+        console.error("Cloudinary upload failed:", error);
+        setUploadProgress(null);
+        alert("Video sharing failed: " + error.message);
+      }
+      setSending(false);
       return;
     }
 
@@ -504,15 +492,7 @@ export default function AdminMessagesPage() {
 
         setSending(true);
         try {
-          const { storage } = await import('@/lib/firebase').then(m => m.initFirebase());
-          const { ref: sRef, uploadBytes, getDownloadURL } = await import('firebase/storage');
-          
-          const pathPrefix = `bridges/${currentUser?.uid || "unknown"}`;
-          const storageRefNode = sRef(storage, `${pathPrefix}/${fileName}`);
-          
-          await uploadBytes(storageRefNode, audioBlob, { contentType: nativeType });
-          const publicUrl = await getDownloadURL(storageRefNode);
-          
+          const publicUrl = await uploadToCloudinary(audioBlob, "video");
           await triggerSendMessage(publicUrl, "audio");
         } catch (err: any) {
           console.error("Audio Upload Error:", err);
