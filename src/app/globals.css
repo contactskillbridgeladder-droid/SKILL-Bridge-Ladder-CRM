@@ -55,7 +55,7 @@ body {
 .overflow-hidden { overflow: hidden; }
 
 /* ─── Layout ─── */
-.app-shell { display: flex; min-height: 100dvh; }
+.app-shell { display: flex; height: 100dvh; overflow: hidden; }
 .app-sidebar {
   width: var(--sidebar-w);
   min-width: var(--sidebar-w);
@@ -637,6 +637,7 @@ body {
 
 .chat-header {
   height: 64px;
+  flex-shrink: 0;
   padding: 0 20px;
   border-bottom: 1px solid var(--border);
   display: flex;
@@ -718,6 +719,7 @@ body {
 }
 
 .chat-input-area {
+  flex-shrink: 0;
   padding: 14px 20px;
   border-top: 1px solid var(--border);
   display: flex;
