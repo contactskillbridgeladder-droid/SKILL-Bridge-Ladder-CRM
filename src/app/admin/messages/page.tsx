@@ -606,6 +606,18 @@ export default function AdminMessagesPage() {
     }
   };
 
+  const clearChat = async () => {
+    if (!confirm("Are you sure you want to delete ALL messages in this chat? This cannot be undone.")) return;
+    if (!rtdb || !activeChat || !currentUser) return;
+    const isClientChat = activeChat.role === "client";
+    const chatId = isClientChat ? `bridge_${activeChat.uid}` : [(currentUser?.uid || "unknown"), activeChat.uid].sort().join("_");
+    try {
+      await remove(ref(rtdb, `chats/${chatId}/messages`));
+    } catch (e: any) {
+      alert("Failed to clear chat: " + e.message);
+    }
+  };
+
   const formatDate = (ts: number) => {
     if (!ts) return "";
     return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' });
@@ -784,6 +796,14 @@ export default function AdminMessagesPage() {
         🚪 Logout
       </button>
     )}
+                <button
+                  onClick={clearChat}
+                  className="btn btn-sm btn-ghost"
+                  style={{ borderRadius: 99, padding: "6px 12px", color: '#f87171' }}
+                  title="Delete all messages in this chat"
+                >
+                  🗑️ Clear Chat
+                </button>
                 <button
                   onClick={() => setShowInfo(!showInfo)}
                   className={`btn btn-sm ${showInfo ? "btn-primary" : "btn-ghost"}`}
