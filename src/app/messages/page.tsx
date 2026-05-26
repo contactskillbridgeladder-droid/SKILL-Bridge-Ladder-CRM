@@ -526,7 +526,7 @@ export default function MessagesPage() {
           await uploadBytes(storageRef, audioBlob, { contentType: nativeType });
           const publicUrl = await getDownloadURL(storageRef);
           
-          await triggerSendMessage(publicUrl, "audio", { fileName });
+          await triggerSendMessage(publicUrl, "audio");
         } catch (err: any) {
           console.error("Audio Upload Error:", err);
           alert("Failed to upload audio: " + err.message);
