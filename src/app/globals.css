@@ -1000,3 +1000,68 @@ body {
   to { opacity: 1; }
 }
 
+/* ─── Mobile Chat Enhancements ─── */
+.mobile-back-button {
+  display: none !important;
+}
+
+@media (max-width: 768px) {
+  .mobile-back-button {
+    display: flex !important;
+  }
+
+  /* Hide the proxy switcher label on small screens */
+  .chat-layout .proxy-switcher-label {
+    display: none !important;
+  }
+  
+  /* Make the switcher buttons row wrap neatly and have smaller padding */
+  .chat-layout .proxy-switcher-buttons {
+    flex: 1;
+    display: flex;
+    justify-content: space-around;
+    gap: 4px !important;
+  }
+  
+  .chat-layout .proxy-switcher-buttons .btn {
+    font-size: 10.5px !important;
+    padding: 4px 6px !important;
+    height: 26px !important;
+    border-radius: 6px !important;
+  }
+
+  /* Make the chat input area fit perfectly on mobile */
+  .chat-input-area {
+    padding: 8px 10px !important;
+    gap: 6px !important;
+  }
+
+  /* Target all inline styled secondary buttons inside chat input to override on mobile */
+  .chat-input-area button.btn-secondary {
+    width: 36px !important;
+    height: 36px !important;
+    font-size: 16px !important;
+    padding: 0 !important;
+    border-radius: 8px !important;
+    flex-shrink: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  .chat-input-area button.btn-primary {
+    width: auto !important;
+    height: 36px !important;
+    padding: 0 12px !important;
+    font-size: 13px !important;
+    border-radius: 8px !important;
+  }
+  
+  .chat-input-area input.crm-input {
+    height: 36px !important;
+    font-size: 13px !important;
+    padding: 6px 10px !important;
+    border-radius: 8px !important;
+  }
+}
+

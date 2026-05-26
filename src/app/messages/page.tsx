@@ -263,25 +263,74 @@ export default function MessagesPage() {
       const { auth } = await initFirebase();
       const token = await auth.currentUser?.getIdToken();
 
-      const res = await fetch("/api/chat/send-message", {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          clientId: activeChat.uid,
+      if (activeChat.role === "client") {
+        const res = await fetch("/api/chat/send-message", {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            clientId: activeChat.uid,
+            senderId: currentUser.uid,
+            senderRole: "editor",
+            text: "",
+            type,
+            mediaData: mediaUrl
+          })
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json();
+          throw new Error(errorData.error || "Blocked by AI Security Filter");
+        }
+      } else {
+        if (!rtdb) return;
+        const chatId = [currentUser.uid, activeChat.uid].sort().join("_");
+        const messagesRef = ref(rtdb, `chats/${chatId}/messages`);
+        const newMsgRef = push(messagesRef);
+        await set(newMsgRef, {
           senderId: currentUser.uid,
-          senderRole: "editor",
           text: "",
           type,
-          mediaData: mediaUrl
-        })
-      });
+          mediaData: mediaUrl,
+          timestamp: Date.now(),
+          status: "sent"
+        });
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "Blocked by AI Security Filter");
+        const metaRef = ref(rtdb, `chats/${chatId}/metadata`);
+        const currentUnread = chatMetadata[activeChat.uid]?.unreadCount?.[activeChat.uid] || 0;
+        let displayMsg = "📷 Photo Attachment";
+        if (type === "audio") displayMsg = "🎵 Voice Note";
+        if (type === "video") displayMsg = "🎥 Video Submission";
+
+        await update(metaRef, {
+          lastMessage: displayMsg,
+          lastTimestamp: Date.now(),
+          lastSenderId: currentUser.uid,
+          [`unreadCount/${activeChat.uid}`]: currentUnread + 1
+        });
+
+        // Trigger Notification
+        const recipientActiveSnap = await get(ref(rtdb, `chats/${chatId}/active/${activeChat.uid}`));
+        const isRecipientActive = recipientActiveSnap.exists() && recipientActiveSnap.val() === true;
+        if (!isRecipientActive) {
+          fetch("/api/notify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              toUid: activeChat.uid,
+              toEmail: activeChat.email,
+              toName: activeChat.name,
+              title: `New Message from ${currentUser.name || "SkillBridge"}`,
+              message: displayMsg,
+              type: "chat_message",
+              chatId: chatId,
+              ctaText: "Reply",
+              ctaLink: "/messages"
+            })
+          }).catch(console.error);
+        }
       }
     } catch (err: any) {
       alert("Failed to deliver media draft: " + err.message);
@@ -630,7 +679,7 @@ export default function MessagesPage() {
     (currentUser.role === "head_editor" && activeChat?.role === "editor" && activeChat?.sourced_by === currentUser.uid);
 
   return (
-    <div className="chat-layout">
+    <div className={`chat-layout ${activeChat ? "mobile-chat-active" : "mobile-chat-inactive"}`}>
       {/* Floating Progress Bar Banner */}
       {uploadProgress !== null && (
         <div style={{
@@ -650,8 +699,7 @@ export default function MessagesPage() {
       )}
 
       {/* ── Left Sidebar (Contact list) ── */}
-      {(!activeChat || !isMobileView) && (
-        <div className="chat-sidebar">
+      <div className="chat-sidebar">
           <div className="chat-sidebar-header">
             <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Secure Messages</h2>
             <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>Real-time chat &amp; task updates</p>
@@ -739,11 +787,9 @@ export default function MessagesPage() {
             )}
           </div>
         </div>
-      )}
 
       {/* ── Main Chat Area ── */}
-      {(activeChat || !isMobileView) ? (
-        <div className="chat-main" style={{ display: activeChat ? "flex" : isMobileView ? "none" : "flex" }}>
+      <div className="chat-main">
           {activeChat ? (
             <div className="flex-1 flex flex-col overflow-hidden" style={{ background: "var(--bg-card)" }}>
               {currentUser && (
@@ -762,14 +808,13 @@ export default function MessagesPage() {
                   {/* Header */}
                   <div className="chat-header">
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      {isMobileView && (
-                        <button
-                          onClick={() => setActiveChat(null)}
-                          style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", display: "flex", alignItems: "center", padding: 4 }}
-                        >
-                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-                        </button>
-                      )}
+                      <button
+                        onClick={() => setActiveChat(null)}
+                        className="mobile-back-button"
+                        style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", display: "flex", alignItems: "center", padding: 4 }}
+                      >
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+                      </button>
                       <div className="chat-contact-avatar" style={{ width: 38, height: 38, fontSize: 14 }}>
                         {activeChat.role === "client" ? "💼" : (activeChat.name || activeChat.email || "U")[0].toUpperCase()}
                       </div>
@@ -860,7 +905,7 @@ export default function MessagesPage() {
 
                                   {m.type === "audio" && m.mediaData ? (
                                     <div style={{ marginTop: 2, width: 220, padding: "8px 12px", background: "rgba(0,0,0,0.2)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.05)" }}>
-                                      <audio src={m.mediaData} controls style={{ width: "100%", height: 32 }} />
+                                      <audio src={m.mediaData} controls controlsList="nodownload" onContextMenu={(e) => e.preventDefault()} style={{ width: "100%", height: 32 }} />
                                     </div>
                                   ) : null}
 
@@ -870,7 +915,7 @@ export default function MessagesPage() {
                                       <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, display: "flex", alignItems: "center", gap: 5 }}>
                                         🎥 Video Draft
                                       </div>
-                                      <video src={m.mediaData} controls style={{ width: "100%", borderRadius: 6, display: "block" }} />
+                                      <video src={m.mediaData} controls controlsList="nodownload" onContextMenu={(e) => e.preventDefault()} style={{ width: "100%", borderRadius: 6, display: "block" }} />
                                       <a 
                                         href={m.mediaData} 
                                         target="_blank" 
@@ -1000,7 +1045,6 @@ export default function MessagesPage() {
             </div>
           )}
         </div>
-      ) : null}
 
       {/* ── Right Panel (User Details / Info) ── */}
       {showInfo && activeChat && (

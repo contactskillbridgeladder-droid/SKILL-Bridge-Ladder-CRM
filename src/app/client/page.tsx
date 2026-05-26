@@ -591,6 +591,8 @@ export default function ClientWorkspace() {
                           <audio
                             src={m.mediaData}
                             controls
+                            controlsList="nodownload"
+                            onContextMenu={(e) => e.preventDefault()}
                             style={{ width: "100%", height: 32 }}
                           />
                         </div>
@@ -605,6 +607,8 @@ export default function ClientWorkspace() {
                           <video
                             src={m.mediaData}
                             controls
+                            controlsList="nodownload"
+                            onContextMenu={(e) => e.preventDefault()}
                             style={{ width: "100%", borderRadius: 6, display: "block" }}
                           />
                           <a 

@@ -246,27 +246,76 @@ export default function AdminMessagesPage() {
           resolvedSenderId = activeChat.assignedEditorUid || (currentUser?.uid || "unknown");
           resolvedSenderRole = "editor";
         }
-      }
 
-      const res = await fetch("/api/chat/send-message", {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          clientId: activeChat.uid,
-          senderId: resolvedSenderId,
-          senderRole: resolvedSenderRole,
+        const res = await fetch("/api/chat/send-message", {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            clientId: activeChat.uid,
+            senderId: resolvedSenderId,
+            senderRole: resolvedSenderRole,
+            text: "",
+            type,
+            mediaData: mediaUrl, fileName: extraData?.fileName
+          })
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json();
+          throw new Error(errorData.error || "API write failed");
+        }
+      } else {
+        if (!rtdb) return;
+        const chatId = [(currentUser?.uid || "unknown"), activeChat.uid].sort().join("_");
+        const messagesRef = ref(rtdb, `chats/${chatId}/messages`);
+        const newMsgRef = push(messagesRef);
+        await set(newMsgRef, {
+          senderId: (currentUser?.uid || "unknown"),
           text: "",
           type,
-          mediaData: mediaUrl, fileName: extraData?.fileName
-        })
-      });
+          mediaData: mediaUrl,
+          fileName: extraData?.fileName,
+          timestamp: Date.now(),
+          status: "sent"
+        });
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "API write failed");
+        const metaRef = ref(rtdb, `chats/${chatId}/metadata`);
+        const currentUnread = chatMetadata[activeChat.uid]?.unreadCount?.[activeChat.uid] || 0;
+        let displayMsg = "📷 Photo Attachment";
+        if (type === "audio") displayMsg = "🎵 Voice Note";
+        if (type === "video") displayMsg = "🎥 Video Submission";
+        if (type === "document") displayMsg = "📄 Document File";
+
+        await update(metaRef, {
+          lastMessage: displayMsg,
+          lastTimestamp: Date.now(),
+          lastSenderId: (currentUser?.uid || "unknown"),
+          [`unreadCount/${activeChat.uid}`]: currentUnread + 1
+        });
+
+        // Trigger Notification
+        const recipientActiveSnap = await get(ref(rtdb, `chats/${chatId}/active/${activeChat.uid}`));
+        const isRecipientActive = recipientActiveSnap.exists() && recipientActiveSnap.val() === true;
+        if (!isRecipientActive) {
+          fetch("/api/notify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              toUid: activeChat.uid,
+              toEmail: activeChat.email,
+              toName: activeChat.name,
+              title: `New Message from Admin`,
+              message: displayMsg,
+              type: "chat_message",
+              chatId: chatId,
+              ctaText: "Reply",
+              ctaLink: "/messages"
+            })
+          }).catch(console.error);
+        }
       }
     } catch (err: any) {
       alert("Failed to deliver media draft: " + err.message);
@@ -648,7 +697,7 @@ export default function AdminMessagesPage() {
   }
 
   return (
-    <div className="chat-layout">
+    <div className={`chat-layout ${activeChat ? "mobile-chat-active" : "mobile-chat-inactive"}`}>
       {/* Floating Progress Bar Banner */}
       {uploadProgress !== null && (
         <div style={{
@@ -668,8 +717,7 @@ export default function AdminMessagesPage() {
       )}
 
       {/* ── Left Sidebar (Contact list) ── */}
-      {(!activeChat || !isMobileView) && (
-        <div className="chat-sidebar">
+      <div className="chat-sidebar">
           <div className="chat-sidebar-header">
             <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Admin Secure Chat</h2>
             <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>Real-time team chat &amp; task updates</p>
@@ -755,24 +803,21 @@ export default function AdminMessagesPage() {
             )}
           </div>
         </div>
-      )}
 
       {/* ── Main Chat Area ── */}
-      {(activeChat || !isMobileView) ? (
-        <div className="chat-main" style={{ display: activeChat ? "flex" : isMobileView ? "none" : "flex" }}>
+      <div className="chat-main">
           {activeChat ? (
             <>
               {/* Header */}
               <div className="chat-header">
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  {isMobileView && (
-                    <button
-                      onClick={() => setActiveChat(null)}
-                      style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", display: "flex", alignItems: "center", padding: 4 }}
-                    >
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-                    </button>
-                  )}
+                  <button
+                    onClick={() => setActiveChat(null)}
+                    className="mobile-back-button"
+                    style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", display: "flex", alignItems: "center", padding: 4 }}
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+                  </button>
                   <div className="chat-contact-avatar" style={{ width: 38, height: 38, fontSize: 14 }}>
                     {activeChat.role === "client" ? "💼" : (activeChat.name || activeChat.email || "U")[0].toUpperCase()}
                   </div>
@@ -925,7 +970,7 @@ export default function AdminMessagesPage() {
 
                               {m.type === "audio" && m.mediaData ? (
                                 <div style={{ marginTop: 2, width: 220, padding: "8px 12px", background: "rgba(0,0,0,0.2)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.05)" }}>
-                                  <audio src={m.mediaData} controls style={{ width: "100%", height: 32 }} />
+                                  <audio src={m.mediaData} controls controlsList="nodownload" onContextMenu={(e) => e.preventDefault()} style={{ width: "100%", height: 32 }} />
                                 </div>
                               ) : null}
 
@@ -935,7 +980,7 @@ export default function AdminMessagesPage() {
                                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, display: "flex", alignItems: "center", gap: 5 }}>
                                     🎥 Video Draft
                                   </div>
-                                  <video src={m.mediaData} controls style={{ width: "100%", borderRadius: 6, display: "block" }} />
+                                  <video src={m.mediaData} controls controlsList="nodownload" onContextMenu={(e) => e.preventDefault()} style={{ width: "100%", borderRadius: 6, display: "block" }} />
                                   <a 
                                     href={m.mediaData} 
                                     target="_blank" 
@@ -988,11 +1033,11 @@ export default function AdminMessagesPage() {
 
               {/* Proxy Perspective Switcher */}
               {activeChat.role === "client" && (
-                <div style={{ display: "flex", gap: 10, padding: "10px 16px", background: "rgba(255,255,255,0.02)", borderTop: "1px solid var(--border)", alignItems: "center" }}>
-                  <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                <div className="proxy-switcher" style={{ display: "flex", gap: 10, padding: "10px 16px", background: "rgba(255,255,255,0.02)", borderTop: "1px solid var(--border)", alignItems: "center" }}>
+                  <span className="proxy-switcher-label" style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
                     🎭 Proxy Role perspective:
                   </span>
-                  <div style={{ display: "flex", gap: 6 }}>
+                  <div className="proxy-switcher-buttons" style={{ display: "flex", gap: 6 }}>
                     <button
                       type="button"
                       className={`btn btn-sm ${proxyRole === "admin" ? "btn-primary" : "btn-ghost"}`}
@@ -1147,7 +1192,6 @@ export default function AdminMessagesPage() {
             </div>
           )}
         </div>
-      ) : null}
 
       {/* ── Right Panel (User Details / Info) ── */}
       {showInfo && activeChat && (
