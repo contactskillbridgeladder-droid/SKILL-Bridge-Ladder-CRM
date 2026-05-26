@@ -30,6 +30,7 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "crm.skillbridgeladder.in" },
     ],
   },
+  // @ts-ignore - Some versions of NextConfig types reject eslint property
   eslint: {
     ignoreDuringBuilds: true,
   },
