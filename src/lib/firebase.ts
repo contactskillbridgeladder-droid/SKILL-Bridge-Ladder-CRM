@@ -61,6 +61,7 @@ export async function initFirebase() {
           localCache: persistentLocalCache({
             tabManager: persistentMultipleTabManager(),
           }),
+          experimentalForceLongPolling: true,
         });
       } catch (err) {
         db = getFirestore(app);
