@@ -139,6 +139,12 @@ export default function ClientWorkspace() {
     set(typingRef, text.length > 0);
   };
 
+  const handleEditClick = (m: any) => {
+    setEditingMessageId(m.id);
+    setInputText(m.text || "");
+    setMenuOpenId(null);
+  };
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim() || !user || sending) return;
@@ -512,7 +518,27 @@ export default function ClientWorkspace() {
                 const isMe = m.senderId === user.uid;
 
                 return (
-                  <div key={m.id} className={`chat-message-bubble-wrapper ${isMe ? "sent" : "received"}`}>
+                  <div key={m.id} className={`chat-message-bubble-wrapper ${isMe ? "sent" : "received"}`} style={{ position: "relative" }} onContextMenu={(e) => { e.preventDefault(); setMenuOpenId(menuOpenId === m.id ? null : m.id); }}>
+                    
+                    <div style={{ position: "absolute", top: 4, [isMe ? 'right' : 'left']: isMe ? "100%" : "100%", padding: "0 8px", zIndex: 5 }}>
+                      <button 
+                        type="button"
+                        onClick={() => setMenuOpenId(menuOpenId === m.id ? null : m.id)} 
+                        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 18, padding: "0 4px", display: "flex", alignItems: "center", justifyContent: "center", height: 32, opacity: 0.6 }}
+                        title="Options"
+                      >
+                        ⋮
+                      </button>
+                      {menuOpenId === m.id && (
+                        <div style={{ position: "absolute", top: "100%", [isMe ? 'right' : 'left']: 0, background: "var(--bg-card)", border: "1px solid var(--border-bright)", borderRadius: 8, padding: 4, zIndex: 50, display: "flex", flexDirection: "column", gap: 4, minWidth: 100, boxShadow: "0 4px 12px rgba(0,0,0,0.2)" }}>
+                          {(isMe && (m.type === "text" || !m.type)) && (
+                            <button type="button" onClick={() => handleEditClick(m)} style={{ background: "none", border: "none", padding: "8px 12px", textAlign: "left", fontSize: 13, cursor: "pointer", color: "var(--text)", width: "100%", borderRadius: 6 }} onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'} onMouseOut={e => e.currentTarget.style.background = 'none'}>Edit</button>
+                          )}
+                          <button type="button" onClick={() => { setMenuOpenId(null); deleteMessage(m.id); }} style={{ background: "none", border: "none", padding: "8px 12px", textAlign: "left", fontSize: 13, cursor: "pointer", color: "#ef4444", width: "100%", borderRadius: 6 }} onMouseOver={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'} onMouseOut={e => e.currentTarget.style.background = 'none'}>Delete</button>
+                        </div>
+                      )}
+                    </div>
+
                     <div className={`chat-bubble ${isMe ? "sent" : "received"}`} style={{
                       background: isMe ? "linear-gradient(135deg,rgba(124,58,237,0.7),rgba(59,130,246,0.7))" : "rgba(255,255,255,0.05)",
                       border: isMe ? "1px solid rgba(124,58,237,0.3)" : "1px solid var(--border)",
@@ -533,7 +559,7 @@ export default function ClientWorkspace() {
                             style={{ maxWidth: "100%", maxHeight: 220, objectFit: "cover", borderRadius: 8, display: "block" }}
                             onClick={() => {
                               const w = window.open();
-                              w?.document.write(`<img src="${m.mediaData}" style="max-width:100%; max-height:100vh; display:block; margin:auto;" />`);
+                              w?.document.write('<img src="' + m.mediaData + '" style="max-width:100%; max-height:100vh; display:block; margin:auto;" />');
                             }}
                           />
                         </div>
