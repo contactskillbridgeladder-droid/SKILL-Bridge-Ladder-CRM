@@ -777,11 +777,11 @@ export default function AdminMessagesPage() {
                   <div className="chat-contact-avatar" style={{ width: 38, height: 38, fontSize: 14 }}>
                     {activeChat.role === "client" ? "💼" : (activeChat.name || activeChat.email || "U")[0].toUpperCase()}
                   </div>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>
-                      {activeChat.role === "client" ? `Intervening Client Channel: ${activeChat.name || activeChat.email}` : (activeChat.name || activeChat.email)}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {activeChat.name || activeChat.email}
                     </div>
-                    <div style={{ fontSize: 11.5, color: "var(--text-muted)", textTransform: "capitalize" }}>
+                    <div style={{ fontSize: 11.5, color: "var(--text-muted)", textTransform: "capitalize", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {typing[activeChat.uid] ? (
                         <span style={{ color: "#a78bfa", fontWeight: 500 }}>typing…</span>
                       ) : (
@@ -791,27 +791,20 @@ export default function AdminMessagesPage() {
                   </div>
                 </div>
 
-                {currentUser.role === 'admin_msg_only' && (
-      <button
-        onClick={async () => {
-          const { auth } = await import('@/lib/firebase').then(m=>m.initFirebase());
-          await signOut(auth);
-          window.location.href = '/login';
-        }}
-        className="btn btn-sm btn-ghost"
-        style={{ borderRadius: 99, padding: '6px 12px', color: '#f87171' }}
-      >
-        🚪 Logout
-      </button>
-    )}
-                <button
-                  onClick={clearChat}
-                  className="btn btn-sm btn-ghost"
-                  style={{ borderRadius: 99, padding: "6px 12px", color: '#f87171' }}
-                  title="Delete all messages in this chat"
-                >
-                  🗑️ Clear Chat
-                </button>
+                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  {currentUser.role === 'admin_msg_only' && (
+                    <button
+                      onClick={async () => {
+                        const { auth } = await import('@/lib/firebase').then(m=>m.initFirebase());
+                        await signOut(auth);
+                        window.location.href = '/login';
+                      }}
+                      className="btn btn-sm btn-ghost"
+                      style={{ borderRadius: 99, padding: '6px 12px', color: '#f87171' }}
+                    >
+                      🚪 Logout
+                    </button>
+                  )}
                 <button
                   onClick={() => setShowInfo(!showInfo)}
                   className={`btn btn-sm ${showInfo ? "btn-primary" : "btn-ghost"}`}
@@ -819,6 +812,7 @@ export default function AdminMessagesPage() {
                 >
                   ℹ️ Info
                 </button>
+                </div>
               </div>
 
               {/* Message List */}
