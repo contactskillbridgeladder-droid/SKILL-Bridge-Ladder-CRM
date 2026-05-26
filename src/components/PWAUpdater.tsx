@@ -79,11 +79,8 @@ export default function PWAUpdater() {
   const handleDismiss = () => {
     dismissed.current = true;
     setShow(false);
-    // Silently apply the update in background — next navigation will use it
-    const reg = regRef.current;
-    if (reg?.waiting) {
-      reg.waiting.postMessage({ type: "SKIP_WAITING" });
-    }
+    // Do NOT send SKIP_WAITING here. If we do, it triggers controllerchange 
+    // and reloads the page abruptly. Let it wait until the next natural app restart.
   };
 
   if (!show) return null;
